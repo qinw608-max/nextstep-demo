@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抽屉收归 · 像素画布</title>
+<!-- 共享设计语言：像素字体 + 配色变量 -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+:root {
+  --bg: #f0ebe0; --bg-canvas: #e8e2d4; --bg-panel: #faf7f0;
+  --bg-card: #ffffff; --bg-card-hi: #f5f1e8;
+  --primary: #4a7c9e; --primary-dim: #6b9bb8; --primary-bg: #e3edf3;
+  --success: #5b8c5a; --success-bg: #e8f0e8;
+  --warning: #c4944a; --warning-bg: #f5edd9;
+  --asset: #8b6fb0; --asset-bg: #ede8f5;
+  --text: #3d3d3d; --text-dim: #8a8a8a; --text-hi: #1a1a1a;
+  --border: #c9c2b0; --border-hi: #a89e85; --shadow: #d4cdb9;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'VT323', monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 18px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ===== 顶部标题栏 ===== */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 64px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 20px;
+}
+.brand { display: flex; flex-direction: column; gap: 4px; }
+.brand .title { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--text-hi); letter-spacing: 0.5px; }
+.brand .desc { font-size: 17px; color: var(--text-dim); }
+.topbar .spacer { flex: 1; }
+
+.count-badge {
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  padding: 8px 12px; border: 2px solid var(--asset); background: var(--asset-bg);
+  color: var(--asset); display: flex; align-items: center; gap: 8px;
+}
+.count-badge .num { font-size: 12px; }
+.count-badge .dot { width: 8px; height: 8px; background: var(--asset); }
+
+.btn {
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  padding: 9px 12px; border: 2px solid var(--border); background: var(--bg-card);
+  color: var(--text); cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: background 0.08s;
+}
+.btn:hover { background: var(--bg-card-hi); }
+.btn.primary { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
+.btn.primary:hover { background: #d6e6ef; }
+.btn.asset { border-color: var(--asset); color: var(--asset); background: var(--asset-bg); }
+.btn.asset:hover { background: #e2daf0; }
+
+/* ===== 画布视口与世界 ===== */
+.viewport {
+  position: fixed; top: 64px; left: 0; right: 0; bottom: 0;
+  overflow: hidden; background: var(--bg-canvas);
+  cursor: grab;
+}
+.viewport.panning { cursor: grabbing; }
+.world {
+  position: absolute; top: 0; left: 0;
+  width: 4200px; height: 3200px;
+  transform-origin: 0 0;
+  background-color: var(--bg-canvas);
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    linear-gradient(rgba(201,194,176,0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201,194,176,0.35) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+/* SVG 连接线层 */
+#link-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+#link-layer line { stroke: var(--primary); stroke-width: 2.5; opacity: 0.8; transition: stroke 0.2s, opacity 0.2s, stroke-dasharray 0.2s; }
+#link-layer line.dim { stroke: var(--text-dim); stroke-width: 2; opacity: 0.4; stroke-dasharray: 5 5; }
+#link-layer polygon { fill: var(--primary); opacity: 0.8; transition: opacity 0.2s, fill 0.2s; }
+#link-layer polygon.dim { fill: var(--text-dim); opacity: 0.4; }
+
+/* ===== 任务节点（抽屉式） ===== */
+.node {
+  position: absolute;
+  width: 230px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--shadow);
+  transition: box-shadow 0.1s;
+}
+.node:hover { box-shadow: 6px 6px 0 0 var(--shadow); }
+.node.done { border-color: var(--success); }
+
+.node-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 2px solid var(--border);
+  cursor: grab;
+  position: relative;
+}
+.node-head:active { cursor: grabbing; }
+.node.collapsed .node-head { border-bottom: 2px solid transparent; }
+
+.node .tag { width: 9px; height: 9px; flex: 0 0 9px; }
+.node.status-done .tag { background: var(--success); }
+.node.status-doing .tag { background: var(--primary); animation: pulse 1.2s steps(3) infinite; }
+.node.status-todo .tag { background: var(--text-dim); }
+@keyframes pulse { 50% { opacity: 0.4; } }
+
+.node .title { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--text-hi); flex: 1; }
+.node .toggle {
+  width: 22px; height: 22px; flex: 0 0 22px;
+  background: var(--bg-card-hi); border: 1px solid var(--border);
+  font-family: 'Press Start 2P', monospace; font-size: 10px;
+  cursor: pointer; color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+}
+.node .toggle:hover { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+
+/* 可折叠的抽屉主体 */
+.node-drawer {
+  max-height: 320px;
+  overflow: hidden;
+  transition: max-height 0.32s cubic-bezier(.5,0,.2,1), opacity 0.22s, transform 0.32s;
+  opacity: 1;
+  transform: translateY(0);
+}
+.node.collapsed .node-drawer {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.node-body { padding: 9px 10px; font-size: 17px; color: var(--text); line-height: 1.3; }
+.node-meta { padding: 4px 10px 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-family: 'Press Start 2P', monospace; font-size: 7px;
+  padding: 4px 6px; border: 1px solid var(--border); background: var(--bg-card-hi);
+  color: var(--text-dim);
+}
+.chip.owner { color: var(--primary); border-color: var(--primary); }
+.chip.due { color: var(--warning); border-color: var(--warning); }
+
+.progress { padding: 0 10px 9px; }
+.progress .bar { height: 8px; background: var(--bg-canvas); border: 1px solid var(--border); position: relative; }
+.progress .fill { height: 100%; background: var(--primary); transition: width 0.3s; }
+.node.status-done .progress .fill { background: var(--success); }
+.progress .pct { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--text-dim); margin-top: 3px; display: block; }
+
+.node-actions { padding: 8px 10px; border-top: 1px dashed var(--border); display: flex; gap: 6px; }
+.act-btn {
+  flex: 1; padding: 6px 0; border: 1px solid var(--border); background: var(--bg-card);
+  font-family: 'Press Start 2P', monospace; font-size: 8px; cursor: pointer; color: var(--text);
+}
+.act-btn:hover { background: var(--bg-card-hi); }
+.act-btn.done-btn { border-color: var(--success); color: var(--success); }
+.act-btn.done-btn:hover { background: var(--success-bg); }
+.act-btn.done-btn.completed { background: var(--success); color: #fff; cursor: default; }
+
+/* 收起态下的紧凑标识 */
+.collapse-mark {
+  position: absolute; right: 40px; top: 50%; transform: translateY(-50%);
+  font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--text-dim);
+  opacity: 0; transition: opacity 0.2s;
+}
+.node.collapsed .collapse-mark { opacity: 1; }
+
+/* 完成时自动收起的动画反馈 */
+.node.auto-collapsing { animation: shutter 0.5s steps(6); }
+@keyframes shutter {
+  0% { box-shadow: 4px 4px 0 0 var(--success); }
+  50% { box-shadow: 4px 4px 0 0 var(--success); transform: translateX(2px); }
+  100% { box-shadow: 4px 4px 0 0 var(--shadow); }
+}
+
+/* ===== 右下角缩放控制 ===== */
+.toolbar {
+  position: fixed; right: 20px; bottom: 20px; z-index: 100;
+  background: var(--bg-panel); border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--shadow); padding: 8px;
+  display: flex; flex-direction: column; gap: 6px; width: 140px;
+}
+.toolbar .tb-title { font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--text-dim); text-align: center; padding-bottom: 4px; border-bottom: 1px dashed var(--border); }
+.zoom-label { font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--text-dim); text-align: center; }
+.zoom-row { display: flex; gap: 6px; }
+.zoom-btn { flex: 1; padding: 6px 0; background: var(--bg-card); border: 2px solid var(--border); font-family: 'Press Start 2P', monospace; font-size: 9px; cursor: pointer; color: var(--text); }
+.zoom-btn:hover { background: var(--bg-card-hi); }
+
+/* ===== 底部提示 ===== */
+.hint {
+  position: fixed; left: 20px; bottom: 20px; z-index: 90;
+  background: var(--bg-panel); border: 2px solid var(--border); box-shadow: 3px 3px 0 0 var(--shadow);
+  padding: 8px 14px; font-size: 17px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 8px;
+}
+.hint .key { font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 4px 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
+
+/* 完成提示 toast */
+.toast {
+  position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
+  z-index: 120; background: var(--success-bg); border: 2px solid var(--success);
+  box-shadow: 3px 3px 0 0 var(--shadow); padding: 8px 16px;
+  font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--success);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- 顶部标题栏 -->
+<div class="topbar">
+  <div class="brand">
+    <div class="title">DRAWER COLLAPSE</div>
+    <div class="desc">抽屉收归 — 收起节点节省画布，完成时自动关上抽屉，连线随之淡化</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="count-badge"><span class="dot"></span>已收起 <span class="num" id="collapsedNum">0</span> / <span class="num">6</span></div>
+  <button class="btn asset" id="collapseAll">全部收起</button>
+  <button class="btn primary" id="expandAll">全部展开</button>
+</div>
+
+<!-- 画布视口 -->
+<div class="viewport" id="viewport">
+  <div class="world" id="world">
+    <svg id="link-layer" viewBox="0 0 4200 3200" preserveAspectRatio="none"></svg>
+    <!-- 节点由 JS 注入 -->
+  </div>
+</div>
+
+<!-- 右下角缩放 -->
+<div class="toolbar">
+  <div class="tb-title">VIEW</div>
+  <div class="zoom-label" id="zoomLabel">100%</div>
+  <div class="zoom-row">
+    <button class="zoom-btn" id="zoomOut">－</button>
+    <button class="zoom-btn" id="zoomReset">◎</button>
+    <button class="zoom-btn" id="zoomIn">＋</button>
+  </div>
+</div>
+
+<!-- 底部提示 -->
+<div class="hint">
+  <span>拖节点头部</span><span class="key">移动</span>
+  <span>拖空白</span><span class="key">平移</span>
+  <span>滚轮</span><span class="key">缩放</span>
+  <span>点</span><span class="key">－/＋</span><span>收起/展开</span>
+</div>
+
+<!-- 完成提示 -->
+<div class="toast" id="toast">节点已完成 · 抽屉关上</div>
+
+<script>
+/* ============================================================
+   抽屉收归 demo 逻辑
+   - 6 个任务节点，初始部分收起
+   - 单节点收起/展开（max-height 动画）
+   - 完成节点 → 自动收起（抽屉关上效果）
+   - 全部收起 / 全部展开 + 收起计数
+   - 连接线随收起状态变虚线变淡
+   - 画布平移缩放 + 节点拖拽
+   ============================================================ */
+
+const viewport = document.getElementById('viewport');
+const world = document.getElementById('world');
+const linkLayer = document.getElementById('link-layer');
+const zoomLabel = document.getElementById('zoomLabel');
+const collapsedNumEl = document.getElementById('collapsedNum');
+const toast = document.getElementById('toast');
+
+// 全局状态
+const state = {
+  tx: 60, ty: 20, scale: 1,
+  nodes: [],
+};
+
+// 6 个节点初始数据 + 连接关系
+const nodeData = [
+  { id: 'n1', x: 160, y: 150, title: '需求调研', status: 'done', desc: '用户访谈、竞品分析、需求池整理', owner: '林溪', due: 'D1', pct: 100, collapsed: false },
+  { id: 'n2', x: 560, y: 150, title: '方案设计', status: 'doing', desc: '信息架构与交互流程评审中', owner: '陈舟', due: 'D3', pct: 55, collapsed: false },
+  { id: 'n3', x: 960, y: 150, title: '原型评审', status: 'todo', desc: '低保真原型内部评审、记录待改项', owner: '林溪', due: 'D5', pct: 0, collapsed: true },
+  { id: 'n4', x: 560, y: 470, title: 'UI 视觉', status: 'todo', desc: '视觉规范、组件库、关键页出图', owner: '苏野', due: 'D6', pct: 0, collapsed: false },
+  { id: 'n5', x: 960, y: 470, title: '前端开发', status: 'todo', desc: '搭建骨架、按设计稿还原页面', owner: '陈舟', due: 'D9', pct: 0, collapsed: true },
+  { id: 'n6', x: 1360, y: 310, title: '测试上线', status: 'todo', desc: '回归测试、灰度发布、监控配置', owner: '林溪', due: 'D12', pct: 0, collapsed: false },
+];
+// 连接边：[from, to]
+const edges = [
+  ['n1','n2'], ['n2','n3'], ['n2','n4'], ['n4','n5'], ['n3','n6'], ['n5','n6']
+];
+
+// ---------- 创建节点 DOM ----------
+function initNodes() {
+  nodeData.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'node status-' + d.status + (d.collapsed ? ' collapsed' : '') + (d.status === 'done' ? ' done' : '');
+    el.style.left = d.x + 'px';
+    el.style.top = d.y + 'px';
+    el.dataset.id = d.id;
+    el.innerHTML = `
+      <div class="node-head">
+        <span class="tag"></span>
+        <span class="title">${d.title}</span>
+        <span class="collapse-mark">${d.due}</span>
+        <button class="toggle" title="收起/展开">${d.collapsed ? '＋' : '－'}</button>
+      </div>
+      <div class="node-drawer">
+        <div class="node-body">${d.desc}</div>
+        <div class="node-meta">
+          <span class="chip owner">@${d.owner}</span>
+          <span class="chip due">${d.due}</span>
+          <span class="chip">${statusLabel(d.status)}</span>
+        </div>
+        <div class="progress">
+          <div class="bar"><div class="fill" style="width:${d.pct}%"></div></div>
+          <span class="pct">${d.pct}%</span>
+        </div>
+        <div class="node-actions">
+          <button class="act-btn done-btn ${d.status === 'done' ? 'completed' : ''}">${d.status === 'done' ? '已完成' : '完成'}</button>
+        </div>
+      </div>
+    `;
+    world.appendChild(el);
+    const n = { ...d, el, w: 230, h: 0 };
+    state.nodes.push(n);
+    requestAnimationFrame(() => { n.h = el.offsetHeight; renderLinks(); });
+
+    // 收起/展开按钮
+    el.querySelector('.toggle').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse(n);
+    });
+    // 完成按钮
+    el.querySelector('.done-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (n.status === 'done') return;
+      completeNode(n);
+    });
+    // 拖拽（头部）
+    el.querySelector('.node-head').addEventListener('mousedown', (e) => {
+      if (e.target.closest('.toggle')) return;
+      onDragStart(e, n);
+    });
+  });
+}
+
+function statusLabel(s) { return s === 'done' ? '已完成' : s === 'doing' ? '进行中' : '待办'; }
+
+// ---------- 收起 / 展开 ----------
+function toggleCollapse(n) {
+  n.collapsed = !n.collapsed;
+  applyCollapse(n);
+}
+function applyCollapse(n) {
+  n.el.classList.toggle('collapsed', n.collapsed);
+  n.el.querySelector('.toggle').textContent = n.collapsed ? '＋' : '－';
+  // 抽屉动画结束后重算高度与连线
+  setTimeout(() => { n.h = n.el.offsetHeight; renderLinks(); }, 340);
+  updateCount();
+  renderLinks();
+}
+function collapseNode(n) { n.collapsed = true; applyCollapse(n); }
+function expandNode(n) { n.collapsed = false; applyCollapse(n); }
+
+// ---------- 完成节点 → 自动收起 ----------
+function completeNode(n) {
+  n.status = 'done';
+  n.pct = 100;
+  n.el.classList.add('done', 'status-done');
+  n.el.classList.remove('status-doing', 'status-todo');
+  n.el.querySelector('.progress .fill').style.width = '100%';
+  n.el.querySelector('.node-meta .chip:last-child').textContent = '已完成';
+  const btn = n.el.querySelector('.done-btn');
+  btn.classList.add('completed');
+  btn.textContent = '已完成';
+  n.el.querySelector('.tag').style.animation = 'none';
+  // 抽屉关上动画反馈
+  n.el.classList.add('auto-collapsing');
+  setTimeout(() => n.el.classList.remove('auto-collapsing'), 500);
+  // 延迟收起，让"完成"反馈先可见
+  setTimeout(() => { collapseNode(n); }, 380);
+  showToast('节点已完成 · 抽屉关上');
+  renderLinks();
+}
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+}
+
+// ---------- 全部收起 / 全部展开 ----------
+document.getElementById('collapseAll').onclick = () => {
+  state.nodes.forEach(n => { n.collapsed = true; applyCollapse(n); });
+};
+document.getElementById('expandAll').onclick = () => {
+  state.nodes.forEach(n => { n.collapsed = false; applyCollapse(n); });
+};
+
+// ---------- 收起计数 ----------
+function updateCount() {
+  const c = state.nodes.filter(n => n.collapsed).length;
+  collapsedNumEl.textContent = c;
+}
+
+// ---------- 连接线 ----------
+function renderLinks() {
+  linkLayer.innerHTML = '';
+  const byId = id => state.nodes.find(n => n.id === id);
+  edges.forEach(([fromId, toId]) => {
+    const a = byId(fromId), b = byId(toId);
+    if (!a || !b) return;
+    if (!a.h) a.h = a.el.offsetHeight;
+    if (!b.h) b.h = b.el.offsetHeight;
+    // 任一端收起则变虚线变淡
+    const dim = a.collapsed || b.collapsed;
+    const ax = a.x + a.w / 2, ay = a.y + a.h / 2;
+    const bx = b.x + b.w / 2, by = b.y + b.h / 2;
+    const ang = Math.atan2(by - ay, bx - ax);
+    const pa = edgePoint(a, ang), pb = edgePoint(b, ang + Math.PI);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', pa.x); line.setAttribute('y1', pa.y);
+    line.setAttribute('x2', pb.x); line.setAttribute('y2', pb.y);
+    if (dim) line.classList.add('dim');
+    linkLayer.appendChild(line);
+    // 箭头
+    const arrow = arrowPolygon(pb, ang);
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', arrow.map(p => p.join(',')).join(' '));
+    if (dim) poly.classList.add('dim');
+    linkLayer.appendChild(poly);
+  });
+}
+function edgePoint(n, ang) {
+  const cx = n.x + n.w / 2, cy = n.y + (n.h || 70) / 2;
+  const hw = n.w / 2, hh = (n.h || 70) / 2;
+  const tx = Math.cos(ang), ty = Math.sin(ang);
+  let t = Infinity;
+  if (tx !== 0) t = Math.min(t, Math.abs(hw / tx));
+  if (ty !== 0) t = Math.min(t, Math.abs(hh / ty));
+  return { x: cx + tx * t, y: cy + ty * t };
+}
+function arrowPolygon(tip, ang) {
+  const s = 8;
+  const x = Math.cos(ang), y = Math.sin(ang);
+  const baseX = tip.x - x * s, baseY = tip.y - y * s;
+  const px = -y, py = x;
+  return [
+    [tip.x, tip.y],
+    [baseX + px * s/2, baseY + py * s/2],
+    [baseX - px * s/2, baseY - py * s/2],
+  ];
+}
+
+// ---------- 画布变换 ----------
+function applyTransform() {
+  world.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+  zoomLabel.textContent = Math.round(state.scale * 100) + '%';
+}
+applyTransform();
+
+function screenToWorld(clientX, clientY) {
+  const rect = viewport.getBoundingClientRect();
+  return { x: (clientX - rect.left - state.tx) / state.scale, y: (clientY - rect.top - state.ty) / state.scale };
+}
+
+// ---------- 平移 ----------
+let panState = null;
+viewport.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.node') || e.target.closest('.toolbar') || e.target.closest('.topbar') || e.target.closest('.hint')) return;
+  panState = { startX: e.clientX, startY: e.clientY, origTx: state.tx, origTy: state.ty, moved: false };
+  viewport.classList.add('panning');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!panState) return;
+  const dx = e.clientX - panState.startX, dy = e.clientY - panState.startY;
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) panState.moved = true;
+  state.tx = panState.origTx + dx; state.ty = panState.origTy + dy;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { if (panState) { viewport.classList.remove('panning'); panState = null; } });
+
+// ---------- 缩放 ----------
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  let ns = Math.max(0.35, Math.min(2.4, state.scale * delta));
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  state.tx = mx - (mx - state.tx) * (ns / state.scale);
+  state.ty = my - (my - state.ty) * (ns / state.scale);
+  state.scale = ns;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('zoomIn').onclick = () => zoomBy(1.2);
+document.getElementById('zoomOut').onclick = () => zoomBy(1 / 1.2);
+document.getElementById('zoomReset').onclick = () => { state.tx = 60; state.ty = 20; state.scale = 1; applyTransform(); };
+function zoomBy(f) {
+  const rect = viewport.getBoundingClientRect();
+  const cx = rect.width / 2, cy = rect.height / 2;
+  let ns = Math.max(0.35, Math.min(2.4, state.scale * f));
+  state.tx = cx - (cx - state.tx) * (ns / state.scale);
+  state.ty = cy - (cy - state.ty) * (ns / state.scale);
+  state.scale = ns;
+  applyTransform();
+}
+
+// ---------- 节点拖拽 ----------
+function onDragStart(e, item) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const start = screenToWorld(e.clientX, e.clientY);
+  const ox = item.x, oy = item.y;
+  function onMove(ev) {
+    const w = screenToWorld(ev.clientX, ev.clientY);
+    item.x = ox + (w.x - start.x);
+    item.y = oy + (w.y - start.y);
+    item.el.style.left = item.x + 'px';
+    item.el.style.top = item.y + 'px';
+    renderLinks();
+  }
+  function onUp() {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  }
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+// ---------- 启动 ----------
+initNodes();
+updateCount();
+renderLinks();
+window.addEventListener('resize', renderLinks);
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Next Step · Logo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ===== 设计变量：琥珀 / 深黑 / 奶油底 ===== */
+  :root{
+    --amber:#c4944a;
+    --amber-soft:rgba(196,148,74,.55);
+    --ink:#1a1a1a;
+    --cream:#f4f1ec;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--cream);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'Instrument Serif',serif;
+    overflow:hidden;
+  }
+
+  .stage{text-align:center}
+
+  /* ===== Logo 标记容器 ===== */
+  .mark{
+    position:relative;
+    width:120px;
+    height:120px;
+    margin:0 auto 30px;
+  }
+
+  /* 半圆环 - 左：代表“对话”，从左侧滑入 */
+  .ring.left{
+    position:absolute;left:0;top:0;
+    width:60px;height:120px;
+    border:3px solid var(--amber);
+    border-right:none;            /* 右边无竖线，拼合后无缝 */
+    border-radius:60px 0 0 60px;
+    box-sizing:border-box;
+    opacity:0;
+    transform:translateX(-30px);
+    animation:slideInLeft .9s cubic-bezier(.22,.61,.36,1) .15s forwards;
+  }
+  /* 半圆环 - 右：代表“画布”，从右侧滑入 */
+  .ring.right{
+    position:absolute;right:0;top:0;
+    width:60px;height:120px;
+    border:3px solid var(--amber);
+    border-left:none;            /* 左边无竖线，拼合后无缝 */
+    border-radius:0 60px 60px 0;
+    box-sizing:border-box;
+    opacity:0;
+    transform:translateX(30px);
+    animation:slideInRight .9s cubic-bezier(.22,.61,.36,1) .15s forwards;
+  }
+
+  /* 圆环外圈呼吸光晕：用伪元素 box-shadow 做发光环 */
+  .mark::after{
+    content:"";
+    position:absolute;
+    inset:-12px;                 /* 略大于圆环，光晕向外扩散 */
+    border-radius:50%;
+    box-shadow:0 0 22px rgba(196,148,74,.16);
+    opacity:0;
+    animation:halo 3.8s ease-in-out 1.4s infinite;
+    pointer-events:none;
+  }
+
+  /* 扫描线遮罩：圆形裁剪，让扫描线只出现在圆环内部 */
+  .scanwrap{
+    position:absolute;
+    inset:3px;                   /* 紧贴描边内侧 */
+    border-radius:50%;
+    overflow:hidden;
+    pointer-events:none;
+  }
+  /* 扫描线：横向高光线，自上而下扫过圆环，暗示“双向同步”的信号流 */
+  .scanline{
+    position:absolute;
+    left:0;right:0;
+    top:50%;
+    height:1px;
+    background:linear-gradient(90deg,transparent,var(--amber-soft),transparent);
+    transform:translateY(-54px);
+    opacity:0;
+    animation:scan 3.8s ease-in-out 1.7s infinite;
+  }
+
+  /* ===== 中心箭头：代表“下一步” ===== */
+  .arrow{
+    position:absolute;
+    top:50%;left:50%;
+    transform:translate(-50%,-50%);
+    display:flex;
+    align-items:center;
+    opacity:0;
+    animation:fadeArrow .5s ease 1s forwards, nudge 3.8s ease-in-out 1.7s infinite;
+  }
+  .arrow-stem{
+    display:block;
+    width:26px;height:2px;
+    background:var(--amber);
+    transform-origin:left center;
+    transform:scaleX(0);
+    animation:drawStem .5s ease 1.05s forwards;
+  }
+  .arrow-head{
+    display:block;
+    width:0;height:0;
+    border-left:7px solid var(--amber);
+    border-top:5px solid transparent;
+    border-bottom:5px solid transparent;
+    margin-left:-1px;
+  }
+
+  /* ===== 文字 ===== */
+  .wordmark{
+    opacity:0;
+    transform:translateY(10px);
+    animation:fadeUp .8s ease 1.2s forwards;
+  }
+  .brand{
+    display:block;
+    font-style:italic;
+    font-size:38px;
+    line-height:1;
+    color:var(--ink);
+    letter-spacing:.5px;
+  }
+  .tagline{
+    display:block;
+    margin-top:11px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    font-weight:400;
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    color:#9a8a6a;
+  }
+
+  /* ===== 关键帧 ===== */
+  /* 左右半圆滑入合拢 */
+  @keyframes slideInLeft{to{opacity:1;transform:translateX(0)}}
+  @keyframes slideInRight{to{opacity:1;transform:translateX(0)}}
+  /* 箭头杆从左向右画出 */
+  @keyframes drawStem{to{transform:scaleX(1)}}
+  /* 箭头整体淡入 */
+  @keyframes fadeArrow{to{opacity:1}}
+  /* 文字上移渐显 */
+  @keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+  /* 外圈光晕呼吸 */
+  @keyframes halo{
+    0%,100%{opacity:.5;box-shadow:0 0 14px rgba(196,148,74,.12)}
+    50%{opacity:1;box-shadow:0 0 30px rgba(196,148,74,.4)}
+  }
+  /* 箭头轻微右移脉冲，呼应“前进 / 下一步” */
+  @keyframes nudge{
+    0%,100%{transform:translate(-50%,-50%) translateX(0)}
+    50%{transform:translate(-50%,-50%) translateX(2px)}
+  }
+  /* 扫描线自上而下扫过，到底淡出后复位 */
+  @keyframes scan{
+    0%{transform:translateY(-54px);opacity:0}
+    8%{opacity:.85}
+    42%{opacity:.85}
+    50%{transform:translateY(54px);opacity:0}
+    100%{transform:translateY(54px);opacity:0}
+  }
+
+  /* 无障碍：尊重系统的“减少动态”偏好，展示静态终态 */
+  @media (prefers-reduced-motion:reduce){
+    .ring.left,.ring.right,.arrow,.wordmark{opacity:1}
+    .ring.left{transform:translateX(0)}
+    .ring.right{transform:translateX(0)}
+    .arrow-stem{transform:scaleX(1)}
+    .arrow{transform:translate(-50%,-50%)}
+    .wordmark{transform:translateY(0)}
+    .scanline{transform:translateY(0);opacity:.4}
+    .mark::after{opacity:.7}
+    *{animation:none!important}
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <!-- 圆环由左右两半拼成：对话(左) + 画布(右)，合拢即双向同步 -->
+    <div class="mark">
+      <div class="ring left"></div>
+      <div class="ring right"></div>
+      <!-- 圆形遮罩内的扫描线 -->
+      <div class="scanwrap"><div class="scanline"></div></div>
+      <!-- 中心箭头：下一步 -->
+      <div class="arrow">
+        <span class="arrow-stem"></span>
+        <span class="arrow-head"></span>
+      </div>
+    </div>
+    <!-- 品牌字 -->
+    <div class="wordmark">
+      <span class="brand">next step</span>
+      <span class="tagline">对话 · 画布 · 双向同步</span>
+    </div>
+  </div>
+</body>
+</html>

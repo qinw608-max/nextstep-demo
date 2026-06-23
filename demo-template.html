@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板沉淀与复用 · Next Step Eliminator</title>
+<style>
+/* ===== 引入像素字体 ===== */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+/* ===== 共享设计语言：颜色变量 ===== */
+:root {
+  --bg: #f0ebe0; --bg-canvas: #e8e2d4; --bg-panel: #faf7f0;
+  --bg-card: #ffffff; --bg-card-hi: #f5f1e8;
+  --primary: #4a7c9e; --primary-dim: #6b9bb8; --primary-bg: #e3edf3;
+  --success: #5b8c5a; --success-bg: #e8f0e8;
+  --warning: #c4944a; --warning-bg: #f5edd9;
+  --asset: #8b6fb0; --asset-bg: #ede8f5;
+  --text: #3d3d3d; --text-dim: #8a8a8a; --text-hi: #1a1a1a;
+  --border: #c9c2b0; --border-hi: #a89e85; --shadow: #d4cdb9;
+}
+
+/* ===== 全局重置 ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  line-height: 1.3;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  user-select: none;
+}
+
+/* 标题字体 */
+.font-pixel { font-family: 'Press Start 2P', monospace; }
+
+/* ===== 像素风工具类 ===== */
+/* 硬边像素阴影（无模糊） */
+.pixel-shadow { box-shadow: 4px 4px 0 var(--shadow); }
+.pixel-shadow-sm { box-shadow: 3px 3px 0 var(--shadow); }
+.pixel-shadow-asset { box-shadow: 4px 4px 0 #c4b8d9; }
+.pixel-shadow-primary { box-shadow: 4px 4px 0 #b8cfde; }
+
+/* 像素网格背景 */
+.grid-bg {
+  background-color: var(--bg-canvas);
+  background-image:
+    linear-gradient(rgba(168,158,133,0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168,158,133,0.25) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ===== 应用主框架 ===== */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ===== 顶部工具栏 ===== */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  background: var(--bg-panel);
+  border-bottom: 3px solid var(--border-hi);
+  flex-shrink: 0;
+  z-index: 100;
+}
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.topbar-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: var(--text-hi);
+  letter-spacing: 0.5px;
+}
+.topbar-sub {
+  font-size: 16px;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+}
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+/* ===== 像素按钮 ===== */
+.btn {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  padding: 8px 16px;
+  border: 3px solid var(--text-hi);
+  background: var(--bg-card);
+  color: var(--text-hi);
+  cursor: pointer;
+  box-shadow: 4px 4px 0 var(--text-hi);
+  transition: transform 0.08s, box-shadow 0.08s;
+  letter-spacing: 0.5px;
+}
+.btn:hover { background: var(--bg-card-hi); }
+.btn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--text-hi); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: 4px 4px 0 var(--text-hi); }
+
+.btn-asset {
+  background: var(--asset);
+  color: #fff;
+  border-color: #6b4f90;
+  box-shadow: 4px 4px 0 #6b4f90;
+}
+.btn-asset:hover { background: #7d5fa2; }
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: #355a73;
+  box-shadow: 4px 4px 0 #355a73;
+}
+.btn-primary:hover { background: #3d6a8c; }
+
+.btn-sm { font-size: 16px; padding: 4px 10px; box-shadow: 3px 3px 0 var(--text-hi); }
+.btn-sm:active { transform: translate(3px,3px); box-shadow: 0 0 0 var(--text-hi); }
+
+/* ===== 工作区布局 ===== */
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ===== 画布视口（可平移缩放容器） ===== */
+.canvas-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+}
+.canvas-viewport.panning { cursor: grabbing; }
+/* 画布内容层：所有节点挂在这里，整体做 transform 变换 */
+.canvas-content {
+  position: absolute;
+  top: 0; left: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* 画布缩放控件 */
+.zoom-ctrl {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-panel);
+  border: 3px solid var(--border-hi);
+  box-shadow: 4px 4px 0 var(--shadow);
+  padding: 4px;
+  z-index: 50;
+}
+.zoom-ctrl button {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  width: 30px; height: 30px;
+  border: 2px solid var(--border-hi);
+  background: var(--bg-card);
+  cursor: pointer;
+  color: var(--text-hi);
+}
+.zoom-ctrl button:hover { background: var(--bg-card-hi); }
+.zoom-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  min-width: 46px;
+  text-align: center;
+  color: var(--text);
+}
+
+/* 画布提示文字 */
+.canvas-hint {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  font-size: 16px;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  border: 2px solid var(--border);
+  padding: 4px 10px;
+  z-index: 50;
+}
+
+/* ===== 任务节点 ===== */
+.task-node {
+  position: absolute;
+  width: 180px;
+  background: var(--bg-card);
+  border: 3px solid var(--border-hi);
+  box-shadow: 4px 4px 0 var(--shadow);
+  cursor: grab;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.task-node:hover { border-color: var(--primary); box-shadow: 4px 4px 0 var(--primary-dim); }
+.task-node.dragging { cursor: grabbing; z-index: 60; box-shadow: 6px 6px 0 var(--primary-dim); }
+
+/* 节点头部：状态条 */
+.task-node .node-bar {
+  height: 8px;
+  background: var(--primary);
+}
+/* done 状态：灰色 + 划线 */
+.task-node.done .node-bar { background: var(--text-dim); }
+.task-node.done .node-title { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 2px; }
+.task-node.done { background: var(--bg-card-hi); }
+
+/* 节点主体 */
+.task-node .node-body { padding: 8px 10px 10px; }
+.task-node .node-title {
+  font-size: 19px;
+  color: var(--text-hi);
+  word-break: break-all;
+  cursor: text;
+  min-height: 24px;
+  outline: none;
+}
+.task-node .node-title:focus {
+  background: var(--primary-bg);
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+.task-node .node-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+.task-node .node-status {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  padding: 2px 5px;
+  border: 2px solid currentColor;
+}
+.task-node.done .node-status { color: var(--text-dim); }
+.task-node.pending .node-status { color: var(--primary); }
+
+/* 节点操作按钮 */
+.task-node .node-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 2px dashed var(--border);
+}
+.task-node .node-actions button {
+  font-size: 15px;
+  padding: 1px 6px;
+  border: 2px solid var(--border-hi);
+  background: var(--bg-panel);
+  cursor: pointer;
+  color: var(--text);
+}
+.task-node .node-actions button:hover { background: var(--bg-card-hi); }
+
+/* 节点沉淀动画状态 */
+.task-node.converging {
+  transition: left 0.7s cubic-bezier(0.5, 0, 0.7, 1),
+              top 0.7s cubic-bezier(0.5, 0, 0.7, 1),
+              opacity 0.5s 0.5s;
+  z-index: 70;
+}
+
+/* 合成的模板卡片（画布中心浮现） */
+.synth-card {
+  position: absolute;
+  width: 220px;
+  background: var(--bg-card);
+  border: 4px solid var(--asset);
+  box-shadow: 6px 6px 0 #c4b8d9, 0 0 0 6px var(--asset-bg);
+  padding: 14px;
+  z-index: 80;
+  transform-origin: center;
+}
+.synth-card .sc-icon {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: var(--asset);
+  margin-bottom: 6px;
+}
+.synth-card .sc-name {
+  font-size: 21px;
+  color: var(--text-hi);
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+.synth-card .sc-info {
+  font-size: 16px;
+  color: var(--text-dim);
+}
+.synth-card.flying {
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s 0.6s;
+}
+
+/* ===== 模板库侧边栏 ===== */
+.template-library {
+  width: 300px;
+  background: var(--bg-panel);
+  border-left: 3px solid var(--border-hi);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 90;
+}
+.lib-header {
+  padding: 12px 16px;
+  border-bottom: 3px solid var(--border-hi);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lib-header h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: var(--text-hi);
+}
+.lib-count {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #fff;
+  background: var(--asset);
+  padding: 3px 7px;
+  border: 2px solid #6b4f90;
+}
+.lib-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lib-list::-webkit-scrollbar { width: 10px; }
+.lib-list::-webkit-scrollbar-track { background: var(--bg-canvas); }
+.lib-list::-webkit-scrollbar-thumb { background: var(--border-hi); border: 2px solid var(--bg-panel); }
+
+/* 模板库卡片 */
+.lib-card {
+  background: var(--bg-card);
+  border: 3px solid var(--asset);
+  box-shadow: 4px 4px 0 #c4b8d9;
+  padding: 12px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  position: relative;
+}
+.lib-card:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #c4b8d9; }
+.lib-card:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #c4b8d9; }
+.lib-card.lib-new {
+  animation: libCardPop 0.5s ease;
+}
+@keyframes libCardPop {
+  0% { transform: scale(0.3); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.lib-card .lc-tag {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--asset);
+  margin-bottom: 6px;
+}
+.lib-card .lc-name {
+  font-size: 20px;
+  color: var(--text-hi);
+  font-weight: bold;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+/* 模板名编辑框 */
+.lib-card .lc-name[contenteditable="true"] {
+  background: var(--asset-bg);
+  padding: 1px 4px;
+  outline: 2px solid var(--asset);
+}
+.lib-card .lc-info {
+  font-size: 15px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+.lib-card .lc-tasks {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 2px dashed var(--border);
+  font-size: 15px;
+  color: var(--text);
+}
+.lib-card .lc-tasks div { padding: 1px 0; }
+.lib-card .lc-apply {
+  margin-top: 8px;
+  width: 100%;
+  font-size: 17px;
+  padding: 4px;
+  background: var(--asset-bg);
+  border: 2px solid var(--asset);
+  color: var(--asset);
+  cursor: pointer;
+  font-family: 'VT323', monospace;
+}
+.lib-card .lc-apply:hover { background: var(--asset); color: #fff; }
+
+/* ===== 模态弹窗 ===== */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(26,26,26,0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.modal-mask.show { display: flex; animation: fadeIn 0.2s; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal-box {
+  background: var(--bg-panel);
+  border: 4px solid var(--text-hi);
+  box-shadow: 8px 8px 0 var(--text-hi);
+  width: 380px;
+  max-width: 90vw;
+  animation: modalIn 0.25s ease;
+}
+@keyframes modalIn {
+  from { transform: scale(0.7) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.modal-head {
+  background: var(--asset);
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  padding: 10px 14px;
+}
+.modal-body { padding: 18px; }
+.modal-body p { font-size: 18px; margin-bottom: 10px; }
+.modal-body .mb-strong { color: var(--asset); font-weight: bold; }
+.modal-body .mb-tasks {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  padding: 8px 10px;
+  margin: 8px 0 14px;
+  font-size: 17px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.modal-body .mb-tasks div { padding: 1px 0; color: var(--text); }
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 0 18px 18px;
+}
+
+/* ===== Toast 提示 ===== */
+.toast {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: var(--text-hi);
+  color: #fff;
+  font-size: 18px;
+  padding: 8px 18px;
+  border: 3px solid var(--asset);
+  box-shadow: 4px 4px 0 var(--asset);
+  z-index: 300;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.3s, opacity 0.3s;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* ===== 飞行占位（应用模板时从库飞向画布） ===== */
+.fly-ghost {
+  position: fixed;
+  z-index: 250;
+  pointer-events: none;
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s 0.5s;
+}
+
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== 顶部工具栏 ===== -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-title">NEXT STEP ELIMINATOR</span>
+      <span class="topbar-sub">模板沉淀与复用演示</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-asset" id="btnPrecipitate">沉淀为模板</button>
+      <button class="btn btn-sm" id="btnReset">重置画布</button>
+    </div>
+  </div>
+
+  <!-- ===== 工作区 ===== -->
+  <div class="workspace">
+    <!-- 画布视口 -->
+    <div class="canvas-viewport grid-bg" id="viewport">
+      <!-- 画布内容层（整体变换） -->
+      <div class="canvas-content" id="canvas"></div>
+
+      <!-- 缩放控件 -->
+      <div class="zoom-ctrl">
+        <button id="zoomOut">-</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button id="zoomIn">+</button>
+        <button id="zoomFit" title="居中">.</button>
+      </div>
+      <div class="canvas-hint">拖拽空白处平移 · 滚轮缩放 · 拖动节点 · 双击编辑</div>
+    </div>
+
+    <!-- 模板库侧边栏 -->
+    <aside class="template-library">
+      <div class="lib-header">
+        <h2>模板库</h2>
+        <span class="lib-count" id="libCount">0</span>
+      </div>
+      <div class="lib-list" id="libList"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- ===== 应用模板确认弹窗 ===== -->
+<div class="modal-mask" id="modal">
+  <div class="modal-box">
+    <div class="modal-head">应用模板</div>
+    <div class="modal-body">
+      <p>将应用模板 <span class="mb-strong" id="mbName"></span></p>
+      <p>展开为以下任务节点（pending 状态）：</p>
+      <div class="mb-tasks" id="mbTasks"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-sm" id="mbCancel">取消</button>
+      <button class="btn btn-sm btn-primary" id="mbOk">确认应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ *  模板沉淀与复用 · 核心逻辑
+ *  说明：画布采用"视口 + 内容层 transform"模型；
+ *        节点坐标为内容层坐标系，拖拽时需除以缩放比换算。
+ * ============================================================ */
+
+/* ---------- DOM 引用 ---------- */
+const viewport = document.getElementById('viewport');
+const canvas = document.getElementById('canvas');
+const libList = document.getElementById('libList');
+const libCount = document.getElementById('libCount');
+const zoomLabel = document.getElementById('zoomLabel');
+const btnPrecipitate = document.getElementById('btnPrecipitate');
+const btnReset = document.getElementById('btnReset');
+const modal = document.getElementById('modal');
+const mbName = document.getElementById('mbName');
+const mbTasks = document.getElementById('mbTasks');
+const mbOk = document.getElementById('mbOk');
+const mbCancel = document.getElementById('mbCancel');
+const toastEl = document.getElementById('toast');
+
+/* ---------- 画布变换状态 ---------- */
+// cx/cy 为内容层平移量（屏幕像素），zoom 为缩放比
+let cx = 0, cy = 0, zoom = 1;
+
+/* ---------- 数据模型 ---------- */
+// 任务节点列表
+let nodes = [];
+// 模板列表
+let templates = [];
+// 自增 id
+let idSeq = 100;
+
+function nextId() { return ++idSeq; }
+
+/* ---------- 初始数据：画布上 5 个已完成任务 ---------- */
+const initialTasks = [
+  { title: '需求分析', x: 120, y: 110 },
+  { title: '原型设计', x: 380, y: 80 },
+  { title: 'UI 视觉稿', x: 640, y: 120 },
+  { title: '前端开发', x: 360, y: 300 },
+  { title: '联调测试', x: 640, y: 330 },
+];
+
+/* ---------- 初始模板库：3 个已有模板 ---------- */
+const initialTemplates = [
+  {
+    id: 't1',
+    name: '产品迭代流程',
+    createdAt: '2026-06-15',
+    tasks: ['需求评审', '技术方案', '开发排期', '提测验收', '灰度发布'],
+  },
+  {
+    id: 't2',
+    name: '活动策划',
+    createdAt: '2026-06-18',
+    tasks: ['目标拆解', '创意脚本', '物料准备', '上线复盘'],
+  },
+  {
+    id: 't3',
+    name: '内容发布',
+    createdAt: '2026-06-21',
+    tasks: ['选题立项', '内容撰写', '审核校对', '多端分发'],
+  },
+];
+
+/* ---------- 工具函数 ---------- */
+function nowDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+/* ---------- 画布变换：应用 translate + scale ---------- */
+function applyTransform() {
+  canvas.style.transform = `translate(${cx}px, ${cy}px) scale(${zoom})`;
+  zoomLabel.textContent = Math.round(zoom * 100) + '%';
+}
+
+/* 屏幕坐标 -> 画布内容坐标 */
+function screenToCanvas(sx, sy) {
+  const rect = viewport.getBoundingClientRect();
+  return {
+    x: (sx - rect.left - cx) / zoom,
+    y: (sy - rect.top - cy) / zoom,
+  };
+}
+
+/* ---------- 渲染任务节点 ---------- */
+function renderNodes() {
+  // 先清除现有节点 DOM（保留合成卡片等）
+  canvas.querySelectorAll('.task-node').forEach(el => el.remove());
+  nodes.forEach(n => canvas.appendChild(buildNodeEl(n)));
+}
+
+function buildNodeEl(n) {
+  const el = document.createElement('div');
+  el.className = `task-node ${n.status}`;
+  el.dataset.id = n.id;
+  el.style.left = n.x + 'px';
+  el.style.top = n.y + 'px';
+  el.innerHTML = `
+    <div class="node-bar"></div>
+    <div class="node-body">
+      <div class="node-title" contenteditable="false" title="双击编辑">${escapeHtml(n.title)}</div>
+      <div class="node-meta">
+        <span class="node-status">${n.status === 'done' ? 'DONE' : 'PENDING'}</span>
+        <span>#${n.id}</span>
+      </div>
+      <div class="node-actions">
+        <button class="act-toggle">${n.status === 'done' ? '重置' : '完成'}</button>
+        <button class="act-del">删除</button>
+      </div>
+    </div>
+  `;
+  bindNodeEvents(el, n);
+  return el;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------- 节点事件：拖拽 / 编辑 / 状态切换 ---------- */
+function bindNodeEvents(el, n) {
+  // 拖拽：从节点头部 bar 或 body 按下（排除按钮与编辑区）
+  let dragStart = null;
+  const onMouseDown = (e) => {
+    if (e.target.closest('button')) return;        // 点按钮不拖拽
+    if (e.target.isContentEditable) return;        // 编辑中不拖拽
+    e.stopPropagation();
+    dragStart = { sx: e.clientX, sy: e.clientY, ox: n.x, oy: n.y };
+    el.classList.add('dragging');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+  const onMove = (e) => {
+    if (!dragStart) return;
+    const dx = (e.clientX - dragStart.sx) / zoom;
+    const dy = (e.clientY - dragStart.sy) / zoom;
+    n.x = dragStart.ox + dx;
+    n.y = dragStart.oy + dy;
+    el.style.left = n.x + 'px';
+    el.style.top = n.y + 'px';
+  };
+  const onUp = () => {
+    dragStart = null;
+    el.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  el.querySelector('.node-bar').addEventListener('mousedown', onMouseDown);
+  el.querySelector('.node-title').addEventListener('mousedown', onMouseDown);
+  el.querySelector('.node-meta').addEventListener('mousedown', onMouseDown);
+
+  // 编辑标题：双击进入编辑，失焦/回车退出
+  const titleEl = el.querySelector('.node-title');
+  titleEl.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    titleEl.contentEditable = 'true';
+    titleEl.focus();
+    // 全选文字
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+  titleEl.addEventListener('blur', () => {
+    titleEl.contentEditable = 'false';
+    n.title = titleEl.textContent.trim() || '未命名';
+    titleEl.textContent = n.title;
+  });
+  titleEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+    e.stopPropagation(); // 编辑时不触发画布快捷键
+  });
+
+  // 状态切换
+  el.querySelector('.act-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    n.status = n.status === 'done' ? 'pending' : 'done';
+    const newEl = buildNodeEl(n);
+    el.replaceWith(newEl);
+  });
+  // 删除
+  el.querySelector('.act-del').addEventListener('click', (e) => {
+    e.stopPropagation();
+    el.style.transition = 'opacity 0.2s, transform 0.2s';
+    el.style.opacity = '0';
+    el.style.transform = el.style.transform + ' scale(0.6)';
+    setTimeout(() => {
+      nodes = nodes.filter(x => x.id !== n.id);
+      el.remove();
+    }, 200);
+  });
+}
+
+/* ---------- 画布平移与缩放 ---------- */
+// 平移：在视口空白处按下拖拽
+let panStart = null;
+viewport.addEventListener('mousedown', (e) => {
+  if (e.target !== viewport && e.target !== canvas) return; // 只在空白处平移
+  panStart = { sx: e.clientX, sy: e.clientY, ox: cx, oy: cy };
+  viewport.classList.add('panning');
+  document.addEventListener('mousemove', onPanMove);
+  document.addEventListener('mouseup', onPanUp);
+});
+function onPanMove(e) {
+  if (!panStart) return;
+  cx = panStart.ox + (e.clientX - panStart.sx);
+  cy = panStart.oy + (e.clientY - panStart.sy);
+  applyTransform();
+}
+function onPanUp() {
+  panStart = null;
+  viewport.classList.remove('panning');
+  document.removeEventListener('mousemove', onPanMove);
+  document.removeEventListener('mouseup', onPanUp);
+}
+
+// 缩放：滚轮，以鼠标位置为中心
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  // 缩放前鼠标对应的画布坐标
+  const bx = (mx - cx) / zoom;
+  const by = (my - cy) / zoom;
+  const delta = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+  zoom = Math.min(2.2, Math.max(0.35, zoom * delta));
+  // 保持鼠标点对应的画布点不变
+  cx = mx - bx * zoom;
+  cy = my - by * zoom;
+  applyTransform();
+}, { passive: false });
+
+// 缩放按钮
+document.getElementById('zoomIn').addEventListener('click', () => { zoom = Math.min(2.2, zoom * 1.15); applyTransform(); });
+document.getElementById('zoomOut').addEventListener('click', () => { zoom = Math.max(0.35, zoom / 1.15); applyTransform(); });
+document.getElementById('zoomFit').addEventListener('click', fitView);
+
+/* 居中视图：把所有节点框居中显示 */
+function fitView() {
+  if (!nodes.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach(n => {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + 180); maxY = Math.max(maxY, n.y + 120);
+  });
+  const rect = viewport.getBoundingClientRect();
+  const w = maxX - minX, h = maxY - minY;
+  zoom = Math.min(rect.width / (w + 120), rect.height / (h + 120), 1.4);
+  zoom = Math.max(0.4, zoom);
+  cx = (rect.width - w * zoom) / 2 - minX * zoom;
+  cy = (rect.height - h * zoom) / 2 - minY * zoom;
+  applyTransform();
+}
+
+/* ---------- 渲染模板库 ---------- */
+function renderLibrary() {
+  libList.innerHTML = '';
+  templates.forEach(t => libList.appendChild(buildLibCard(t)));
+  libCount.textContent = templates.length;
+}
+
+function buildLibCard(t) {
+  const el = document.createElement('div');
+  el.className = 'lib-card';
+  if (t._new) { el.classList.add('lib-new'); delete t._new; }
+  el.dataset.id = t.id;
+  el.innerHTML = `
+    <div class="lc-tag">TEMPLATE</div>
+    <div class="lc-name" contenteditable="true">${escapeHtml(t.name)}</div>
+    <div class="lc-info">
+      <span>${t.tasks.length} 个任务</span>
+      <span>${t.createdAt}</span>
+    </div>
+    <div class="lc-tasks">${t.tasks.map(x => `<div>· ${escapeHtml(x)}</div>`).join('')}</div>
+    <button class="lc-apply">应用此模板</button>
+  `;
+  // 名称可编辑
+  const nameEl = el.querySelector('.lc-name');
+  nameEl.addEventListener('blur', () => {
+    t.name = nameEl.textContent.trim() || '未命名模板';
+    nameEl.textContent = t.name;
+  });
+  nameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+  });
+  nameEl.addEventListener('click', e => e.stopPropagation());
+  // 应用按钮
+  el.querySelector('.lc-apply').addEventListener('click', (e) => {
+    e.stopPropagation();
+    openApplyModal(t);
+  });
+  // 整卡也可点击应用
+  el.addEventListener('click', () => openApplyModal(t));
+  return el;
+}
+
+/* ============================================================
+ *  沉淀动画：完成节点汇聚 -> 合成模板卡片 -> 飞入模板库
+ * ============================================================ */
+btnPrecipitate.addEventListener('click', precipitate);
+
+async function precipitate() {
+  const doneNodes = nodes.filter(n => n.status === 'done');
+  if (doneNodes.length < 2) {
+    showToast('至少需要 2 个已完成节点才能沉淀');
+    return;
+  }
+  btnPrecipitate.disabled = true;
+
+  // 1. 计算画布中心点（屏幕坐标）
+  const rect = viewport.getBoundingClientRect();
+  const centerX = (rect.width / 2 - cx) / zoom;
+  const centerY = (rect.height / 2 - cy) / zoom;
+
+  // 2. 所有 done 节点汇聚到中心
+  const doneEls = doneNodes.map(n => canvas.querySelector(`.task-node[data-id="${n.id}"]`));
+  doneEls.forEach((el) => {
+    el.classList.add('converging');
+    // 移动到中心（节点宽 180，需减半）
+    el.style.left = (centerX - 90) + 'px';
+    el.style.top = (centerY - 50) + 'px';
+  });
+
+  // 等待汇聚动画
+  await wait(750);
+
+  // 3. 节点淡出
+  doneEls.forEach(el => { el.style.opacity = '0'; });
+  await wait(500);
+  // 移除已淡出的节点 DOM，避免幽灵元素残留
+  doneEls.forEach(el => el.remove());
+
+  // 4. 中心合成模板卡片
+  const taskTitles = doneNodes.map(n => n.title);
+  const newTpl = {
+    id: 't' + nextId(),
+    name: '我的流程模板',
+    createdAt: nowDate(),
+    tasks: taskTitles,
+    _new: true,
+  };
+
+  const synth = document.createElement('div');
+  synth.className = 'synth-card';
+  synth.style.left = (centerX - 110) + 'px';
+  synth.style.top = (centerY - 70) + 'px';
+  synth.style.opacity = '0';
+  synth.style.transform = 'scale(0.2)';
+  synth.innerHTML = `
+    <div class="sc-icon">NEW TEMPLATE</div>
+    <div class="sc-name">${escapeHtml(newTpl.name)}</div>
+    <div class="sc-info">${newTpl.tasks.length} 个任务 · ${newTpl.createdAt}</div>
+  `;
+  canvas.appendChild(synth);
+
+  // 触发放大动画
+  await wait(20);
+  synth.style.transition = 'transform 0.4s cubic-bezier(0.2,1.2,0.4,1), opacity 0.3s';
+  synth.style.opacity = '1';
+  synth.style.transform = 'scale(1)';
+  await wait(450);
+
+  // 5. 移除已沉淀的节点数据
+  const doneIds = new Set(doneNodes.map(n => n.id));
+  nodes = nodes.filter(n => !doneIds.has(n.id));
+
+  // 6. 合成卡片飞入模板库
+  // 计算目标位置（模板库顶部卡片位置，屏幕坐标）
+  const libRect = libList.getBoundingClientRect();
+  const targetX = libRect.left + 20;
+  const targetY = libRect.top + 20;
+
+  // 当前合成卡片屏幕位置
+  const synthScreenX = rect.left + cx + (centerX - 110) * zoom;
+  const synthScreenY = rect.top + cy + (centerY - 70) * zoom;
+
+  // 用 fixed 定位的 ghost 飞行
+  const ghost = synth.cloneNode(true);
+  ghost.classList.add('fly-ghost');
+  ghost.style.left = synthScreenX + 'px';
+  ghost.style.top = synthScreenY + 'px';
+  ghost.style.width = (220 * zoom) + 'px';
+  ghost.style.transition = 'none';
+  document.body.appendChild(ghost);
+
+  // 移除画布上的合成卡
+  synth.remove();
+
+  await wait(20);
+  ghost.style.transition = 'transform 0.8s cubic-bezier(0.4,0,0.2,1), left 0.8s, top 0.8s, width 0.8s, opacity 0.3s 0.6s';
+  ghost.style.left = targetX + 'px';
+  ghost.style.top = targetY + 'px';
+  ghost.style.width = '252px';
+  ghost.style.opacity = '0';
+
+  await wait(850);
+  ghost.remove();
+
+  // 7. 加入模板库
+  templates.unshift(newTpl);
+  renderLibrary();
+  showToast(`已沉淀模板「${newTpl.name}」`);
+
+  btnPrecipitate.disabled = false;
+}
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ============================================================
+ *  应用模板：确认弹窗 -> 展开成 pending 节点飞入画布
+ * ============================================================ */
+let pendingTemplate = null;
+
+function openApplyModal(t) {
+  pendingTemplate = t;
+  mbName.textContent = `「${t.name}」`;
+  mbTasks.innerHTML = t.tasks.map(x => `<div>· ${escapeHtml(x)}</div>`).join('');
+  modal.classList.add('show');
+}
+
+mbCancel.addEventListener('click', () => modal.classList.remove('show'));
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+
+mbOk.addEventListener('click', async () => {
+  if (!pendingTemplate) return;
+  const t = pendingTemplate;
+  modal.classList.remove('show');
+  await applyTemplate(t);
+  pendingTemplate = null;
+});
+
+async function applyTemplate(t) {
+  // 1. 计算画布中心与展开布局
+  const rect = viewport.getBoundingClientRect();
+  const centerX = (rect.width / 2 - cx) / zoom;
+  const centerY = (rect.height / 2 - cy) / zoom;
+
+  const count = t.tasks.length;
+  const cols = Math.min(count, 3);
+  const gap = 210;
+  const startX = centerX - ((cols - 1) * gap) / 2 - 90;
+
+  // 2. 从模板库卡片位置飞出 ghost
+  const libCard = libList.querySelector(`.lib-card[data-id="${t.id}"]`);
+  const cardRect = libCard.getBoundingClientRect();
+
+  // 3. 为每个任务创建一个从模板库飞出的 ghost，最终变成 pending 节点
+  const newNodes = [];
+  const ghosts = [];
+
+  t.tasks.forEach((title, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const targetX = startX + col * gap;
+    const targetY = centerY - 60 + row * 130;
+
+    const node = {
+      id: nextId(),
+      title,
+      status: 'pending',
+      x: targetX,
+      y: targetY,
+    };
+    newNodes.push(node);
+
+    // 创建飞行 ghost
+    const ghost = document.createElement('div');
+    ghost.className = 'fly-ghost';
+    ghost.style.left = cardRect.left + 'px';
+    ghost.style.top = cardRect.top + 'px';
+    ghost.style.width = cardRect.width + 'px';
+    ghost.style.opacity = '0.9';
+    ghost.innerHTML = `
+      <div style="background:#fff;border:3px solid var(--primary);box-shadow:4px 4px 0 #b8cfde;padding:10px;">
+        <div style="font-size:18px;color:var(--text-hi);">${escapeHtml(title)}</div>
+        <div style="font-size:8px;color:var(--primary);font-family:'Press Start 2P',monospace;margin-top:4px;">PENDING</div>
+      </div>
+    `;
+    document.body.appendChild(ghost);
+    ghosts.push({ ghost, node, delay: i * 80 });
+  });
+
+  // 4. 依次飞向各自目标位置
+  ghosts.forEach(({ ghost, node, delay }) => {
+    setTimeout(() => {
+      const targetScreenX = rect.left + cx + node.x * zoom;
+      const targetScreenY = rect.top + cy + node.y * zoom;
+      ghost.style.transition = 'left 0.6s cubic-bezier(0.4,0,0.2,1), top 0.6s, width 0.6s, opacity 0.3s 0.4s';
+      ghost.style.left = targetScreenX + 'px';
+      ghost.style.top = targetScreenY + 'px';
+      ghost.style.width = (180 * zoom) + 'px';
+      ghost.style.opacity = '0';
+    }, delay);
+  });
+
+  // 等待全部飞完
+  await wait(t.tasks.length * 80 + 700);
+
+  // 5. 移除 ghost，在画布上渲染真实 pending 节点（带出现动画）
+  ghosts.forEach(({ ghost }) => ghost.remove());
+  newNodes.forEach(n => nodes.push(n));
+  renderNodes();
+
+  // 给新节点加出现动画
+  newNodes.forEach((n, i) => {
+    setTimeout(() => {
+      const el = canvas.querySelector(`.task-node[data-id="${n.id}"]`);
+      if (el) {
+        el.style.opacity = '0';
+        el.style.transform = 'scale(0.5)';
+        el.style.transition = 'opacity 0.3s, transform 0.3s cubic-bezier(0.2,1.3,0.4,1)';
+        requestAnimationFrame(() => {
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1)';
+        });
+      }
+    }, i * 60);
+  });
+
+  showToast(`已应用模板「${t.name}」，生成 ${t.tasks.length} 个任务`);
+}
+
+/* ---------- 重置画布 ---------- */
+btnReset.addEventListener('click', () => {
+  nodes = initialTasks.map(t => ({
+    id: nextId(),
+    title: t.title,
+    x: t.x, y: t.y,
+    status: 'done',
+  }));
+  canvas.querySelectorAll('.synth-card').forEach(el => el.remove());
+  renderNodes();
+  fitView();
+  showToast('画布已重置');
+});
+
+/* ---------- 初始化 ---------- */
+function init() {
+  // 生成初始已完成节点
+  nodes = initialTasks.map(t => ({
+    id: nextId(),
+    title: t.title,
+    x: t.x, y: t.y,
+    status: 'done',
+  }));
+  templates = initialTemplates.map(t => ({ ...t, tasks: [...t.tasks] }));
+  renderNodes();
+  renderLibrary();
+  // 居中显示
+  setTimeout(fitView, 50);
+}
+
+init();
+
+/* 窗口尺寸变化时保持视图 */
+window.addEventListener('resize', () => { applyTransform(); });
+
+</script>
+</body>
+</html>

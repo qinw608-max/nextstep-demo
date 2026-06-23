@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批注工具 · 像素画布</title>
+<!-- 共享设计语言：像素字体 + 配色变量 -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+:root {
+  --bg: #f0ebe0; --bg-canvas: #e8e2d4; --bg-panel: #faf7f0;
+  --bg-card: #ffffff; --bg-card-hi: #f5f1e8;
+  --primary: #4a7c9e; --primary-dim: #6b9bb8; --primary-bg: #e3edf3;
+  --success: #5b8c5a; --success-bg: #e8f0e8;
+  --warning: #c4944a; --warning-bg: #f5edd9;
+  --asset: #8b6fb0; --asset-bg: #ede8f5;
+  --text: #3d3d3d; --text-dim: #8a8a8a; --text-hi: #1a1a1a;
+  --border: #c9c2b0; --border-hi: #a89e85; --shadow: #d4cdb9;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'VT323', monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 18px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ===== 像素风通用工具类 ===== */
+.pixel-shadow { box-shadow: 4px 4px 0 0 var(--shadow); }
+.pixel-shadow-sm { box-shadow: 3px 3px 0 0 var(--shadow); }
+.pixel-border { border: 2px solid var(--border); }
+.font-title { font-family: 'Press Start 2P', monospace; }
+
+/* ===== 顶部标题栏 ===== */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 64px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 20px;
+}
+.brand { display: flex; flex-direction: column; gap: 4px; }
+.brand .title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px; color: var(--text-hi); letter-spacing: 0.5px;
+}
+.brand .desc { font-size: 17px; color: var(--text-dim); }
+.topbar .spacer { flex: 1; }
+.mode-badge {
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  padding: 8px 12px; border: 2px solid var(--border);
+  background: var(--bg-card); color: var(--text-dim);
+  display: flex; align-items: center; gap: 8px;
+}
+.mode-badge .dot { width: 8px; height: 8px; background: var(--text-dim); display: inline-block; }
+.mode-badge.annotate { color: var(--warning); border-color: var(--warning); background: var(--warning-bg); }
+.mode-badge.annotate .dot { background: var(--warning); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+/* ===== 画布视口与世界 ===== */
+.viewport {
+  position: fixed; top: 64px; left: 0; right: 0; bottom: 0;
+  overflow: hidden; background: var(--bg-canvas);
+  cursor: grab;
+}
+.viewport.panning { cursor: grabbing; }
+.viewport.annotate-cursor { cursor: crosshair; }
+.world {
+  position: absolute; top: 0; left: 0;
+  width: 4000px; height: 3000px;
+  transform-origin: 0 0;
+  /* 像素网格背景 */
+  background-color: var(--bg-canvas);
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    linear-gradient(rgba(201,194,176,0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201,194,176,0.35) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+  background-position: -1px -1px;
+}
+
+/* SVG 连接线层 */
+#link-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+#link-layer line { stroke: var(--warning); stroke-width: 2; stroke-dasharray: 6 4; opacity: 0.75; }
+#link-layer circle { fill: var(--warning); }
+
+/* ===== 任务节点 ===== */
+.node {
+  position: absolute;
+  width: 210px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--shadow);
+  cursor: grab;
+  transition: box-shadow 0.1s, transform 0.05s;
+}
+.node:active { cursor: grabbing; transform: translate(0,0); }
+.node:hover { box-shadow: 6px 6px 0 0 var(--shadow); }
+.node .node-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border);
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  color: var(--text-hi);
+}
+.node .node-head .tag { width: 8px; height: 8px; flex: 0 0 8px; }
+.node .node-body { padding: 8px 10px; font-size: 17px; color: var(--text-dim); line-height: 1.3; }
+.node.status-done .tag { background: var(--success); }
+.node.status-doing .tag { background: var(--primary); }
+.node.status-todo .tag { background: var(--text-dim); }
+.node.status-done { border-color: var(--success); }
+.node.status-doing { border-color: var(--primary); }
+.node .node-foot {
+  padding: 6px 10px; border-top: 1px dashed var(--border);
+  font-size: 15px; color: var(--text-dim);
+  display: flex; justify-content: space-between;
+}
+.node .pct { font-family: 'Press Start 2P', monospace; font-size: 8px; }
+
+/* ===== 批注卡片 ===== */
+.note {
+  position: absolute;
+  width: 200px;
+  background: var(--warning-bg);
+  border: 2px solid var(--warning);
+  box-shadow: 4px 4px 0 0 var(--shadow);
+  transition: box-shadow 0.1s;
+  animation: notePop 0.18s steps(4);
+}
+.note:hover { box-shadow: 6px 6px 0 0 var(--shadow); }
+@keyframes notePop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.note .note-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px;
+  background: var(--warning);
+  cursor: grab;
+  border-bottom: 2px solid var(--warning);
+}
+.note .note-head:active { cursor: grabbing; }
+.note .note-head .lbl {
+  font-family: 'Press Start 2P', monospace; font-size: 8px; color: #fff;
+  letter-spacing: 0.5px;
+}
+.note .note-head .close {
+  width: 16px; height: 16px; background: var(--bg-card); border: none;
+  font-family: 'Press Start 2P', monospace; font-size: 8px;
+  color: var(--warning); cursor: pointer; line-height: 16px; text-align: center;
+  display: flex; align-items: center; justify-content: center;
+}
+.note .note-head .close:hover { background: #fff; color: #b3361f; }
+.note .note-body {
+  padding: 8px 10px;
+  font-size: 18px; line-height: 1.25; color: var(--text-hi);
+  min-height: 44px; outline: none;
+  word-break: break-word;
+}
+.note .note-body:focus { background: rgba(255,255,255,0.5); }
+.note .note-body[contenteditable="false"] { cursor: default; }
+.note .note-foot {
+  padding: 3px 8px; border-top: 1px dashed var(--warning);
+  font-size: 13px; color: var(--text-dim); display: flex; justify-content: space-between;
+}
+.note .note-foot .saved { color: var(--success); }
+.note .note-foot .saved.show { animation: fadeSave 1.2s steps(8); }
+@keyframes fadeSave {
+  0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; }
+}
+
+/* 选择模式下批注不可编辑的视觉提示 */
+body.mode-select .note .note-body { background: rgba(255,255,255,0.25); color: var(--text-dim); }
+body.mode-select .note { box-shadow: 4px 4px 0 0 var(--shadow); }
+
+/* ===== 右下角工具栏 ===== */
+.toolbar {
+  position: fixed; right: 20px; bottom: 20px; z-index: 100;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg-panel);
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--shadow);
+  padding: 8px;
+}
+.toolbar .tb-title {
+  font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--text-dim);
+  padding: 2px 4px 6px; border-bottom: 1px dashed var(--border); margin-bottom: 4px;
+  text-align: center;
+}
+.tool-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; width: 150px;
+  background: var(--bg-card); border: 2px solid var(--border);
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  color: var(--text); cursor: pointer; text-align: left;
+  transition: background 0.08s;
+}
+.tool-btn:hover { background: var(--bg-card-hi); }
+.tool-btn .ico { width: 14px; height: 14px; flex: 0 0 14px; background: var(--text-dim); }
+.tool-btn.active { background: var(--warning-bg); border-color: var(--warning); color: var(--warning); }
+.tool-btn.active .ico { background: var(--warning); }
+.tool-btn.select-mode.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+.tool-btn.select-mode.active .ico { background: var(--primary); }
+.zoom-row { display: flex; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.zoom-btn {
+  flex: 1; padding: 6px 0; background: var(--bg-card); border: 2px solid var(--border);
+  font-family: 'Press Start 2P', monospace; font-size: 9px; cursor: pointer; color: var(--text);
+}
+.zoom-btn:hover { background: var(--bg-card-hi); }
+.zoom-label { font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--text-dim); text-align: center; padding: 3px 0; }
+
+/* ===== 提示条 ===== */
+.hint {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: 90;
+  background: var(--bg-panel); border: 2px solid var(--border);
+  box-shadow: 3px 3px 0 0 var(--shadow);
+  padding: 8px 14px; font-size: 17px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 8px;
+}
+.hint .key {
+  font-family: 'Press Start 2P', monospace; font-size: 8px;
+  padding: 4px 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+}
+</style>
+</head>
+<body class="mode-select">
+
+<!-- 顶部标题栏 -->
+<div class="topbar">
+  <div class="brand">
+    <div class="title">ANNOTATE TOOL</div>
+    <div class="desc">批注工具 — 切换到批注模式，点击空白处添加批注，自动连线到最近节点</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="mode-badge" id="modeBadge"><span class="dot"></span><span id="modeText">SELECT</span></div>
+</div>
+
+<!-- 画布视口 -->
+<div class="viewport" id="viewport">
+  <div class="world" id="world">
+    <!-- SVG 连接线层 -->
+    <svg id="link-layer" viewBox="0 0 4000 3000" preserveAspectRatio="none"></svg>
+    <!-- 节点和批注由 JS 动态注入 -->
+  </div>
+</div>
+
+<!-- 右下角工具栏 -->
+<div class="toolbar">
+  <div class="tb-title">MODE</div>
+  <button class="tool-btn select-mode active" data-mode="select">
+    <span class="ico"></span><span>选择</span>
+  </button>
+  <button class="tool-btn annotate" data-mode="annotate">
+    <span class="ico"></span><span>批注</span>
+  </button>
+  <div class="zoom-label" id="zoomLabel">100%</div>
+  <div class="zoom-row">
+    <button class="zoom-btn" id="zoomOut">－</button>
+    <button class="zoom-btn" id="zoomReset">◎</button>
+    <button class="zoom-btn" id="zoomIn">＋</button>
+  </div>
+</div>
+
+<!-- 底部操作提示 -->
+<div class="hint">
+  <span>拖拽空白</span><span class="key">平移</span>
+  <span>滚轮</span><span class="key">缩放</span>
+  <span>批注模式</span><span class="key">点击空白=新增</span>
+  <span>拖批注头部</span><span class="key">移动</span>
+</div>
+
+<script>
+/* ============================================================
+   批注工具 demo 逻辑
+   - 画布平移缩放（pan & zoom）
+   - 模式切换（选择 / 批注）
+   - 节点拖拽
+   - 批注卡片：创建、编辑(contenteditable)、拖拽、删除
+   - 批注自动连线到最近节点（SVG 虚线）
+   ============================================================ */
+
+// ---------- 基础引用 ----------
+const viewport = document.getElementById('viewport');
+const world = document.getElementById('world');
+const linkLayer = document.getElementById('link-layer');
+const modeBadge = document.getElementById('modeBadge');
+const modeText = document.getElementById('modeText');
+const zoomLabel = document.getElementById('zoomLabel');
+
+// ---------- 全局状态 ----------
+const state = {
+  mode: 'select',        // 当前模式：select / annotate
+  tx: 60, ty: 30,        // 画布平移偏移
+  scale: 1,              // 画布缩放
+  nodes: [],             // 任务节点数据
+  notes: [],             // 批注数据
+  noteSeq: 0,
+};
+
+// ---------- 任务节点初始数据（4个，散布在画布） ----------
+const initialNodes = [
+  { id: 'n1', x: 180, y: 120, title: '需求调研', status: 'done', body: '已完成用户访谈与竞品分析', pct: '100%' },
+  { id: 'n2', x: 620, y: 240, title: '原型设计', status: 'doing', body: '低保真原型评审中，交互待定', pct: '60%' },
+  { id: 'n3', x: 1080, y: 140, title: '前端开发', status: 'todo', body: '搭建项目骨架，组件库选型', pct: '0%' },
+  { id: 'n4', x: 540, y: 540, title: '测试上线', status: 'todo', body: '回归测试与灰度发布', pct: '0%' },
+];
+
+// ---------- 初始化节点 ----------
+function initNodes() {
+  initialNodes.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'node status-' + d.status;
+    el.style.left = d.x + 'px';
+    el.style.top = d.y + 'px';
+    el.dataset.id = d.id;
+    el.innerHTML = `
+      <div class="node-head"><span class="tag"></span>${d.title}</div>
+      <div class="node-body">${d.body}</div>
+      <div class="node-foot"><span class="st">${d.status === 'done' ? '已完成' : d.status === 'doing' ? '进行中' : '待办'}</span><span class="pct">${d.pct}</span></div>
+    `;
+    world.appendChild(el);
+    state.nodes.push({ ...d, el, w: 210, h: 0 });
+    // 记录高度用于连线计算
+    requestAnimationFrame(() => { const nd = state.nodes.find(n => n.id === d.id); if (nd) nd.h = el.offsetHeight; });
+  });
+  bindNodeDrag();
+}
+
+// ---------- 初始示例批注（演示连接线） ----------
+function initDemoNotes() {
+  addNote(470, 360, '这里需要补充转化率数据', false);
+  addNote(980, 320, '与设计稿对齐间距规范', false);
+}
+
+// ---------- 模式切换 ----------
+function setMode(mode) {
+  state.mode = mode;
+  document.body.classList.toggle('mode-select', mode === 'select');
+  document.body.classList.toggle('mode-annotate', mode === 'annotate');
+  viewport.classList.toggle('annotate-cursor', mode === 'annotate');
+  // 更新按钮激活态
+  document.querySelectorAll('.tool-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  // 更新顶部徽章
+  modeBadge.classList.toggle('annotate', mode === 'annotate');
+  modeText.textContent = mode === 'annotate' ? 'ANNOTATE' : 'SELECT';
+  // 选择模式下批注不可编辑
+  document.querySelectorAll('.note .note-body').forEach(b => {
+    b.setAttribute('contenteditable', mode === 'annotate' ? 'true' : 'false');
+    if (mode === 'annotate' && b.textContent.trim() === '') {
+      // 进入批注模式不自动聚焦，避免干扰
+    }
+  });
+}
+document.querySelectorAll('.tool-btn[data-mode]').forEach(b => {
+  b.addEventListener('click', () => setMode(b.dataset.mode));
+});
+
+// ---------- 画布变换：应用 translate+scale ----------
+function applyTransform() {
+  world.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+  zoomLabel.textContent = Math.round(state.scale * 100) + '%';
+}
+applyTransform();
+
+// ---------- 屏幕坐标 -> 画布世界坐标 ----------
+function screenToWorld(clientX, clientY) {
+  const rect = viewport.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - state.tx) / state.scale,
+    y: (clientY - rect.top - state.ty) / state.scale,
+  };
+}
+
+// ---------- 平移 & 缩放 ----------
+let panState = null;
+viewport.addEventListener('mousedown', (e) => {
+  // 点击落在节点/批注/工具栏上时不平移
+  if (e.target.closest('.node') || e.target.closest('.note') || e.target.closest('.toolbar') || e.target.closest('.topbar') || e.target.closest('.hint')) return;
+  panState = {
+    startX: e.clientX, startY: e.clientY,
+    origTx: state.tx, origTy: state.ty,
+    moved: false,
+    screenStart: screenToWorld(e.clientX, e.clientY),
+  };
+  viewport.classList.add('panning');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!panState) return;
+  const dx = e.clientX - panState.startX;
+  const dy = e.clientY - panState.startY;
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) panState.moved = true;
+  state.tx = panState.origTx + dx;
+  state.ty = panState.origTy + dy;
+  applyTransform();
+});
+window.addEventListener('mouseup', (e) => {
+  if (!panState) return;
+  const wasMoved = panState.moved;
+  viewport.classList.remove('panning');
+  // 批注模式下，纯点击空白处（未拖拽）创建批注
+  if (!wasMoved && state.mode === 'annotate') {
+    const w = screenToWorld(e.clientX, e.clientY);
+    // 限制在画布范围内
+    if (w.x > 20 && w.y > 20 && w.x < 3980 && w.y < 2980) {
+      addNote(w.x - 100, w.y - 10, '', true);
+    }
+  }
+  panState = null;
+});
+
+// 滚轮缩放（以鼠标为中心）
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  let ns = state.scale * delta;
+  ns = Math.max(0.35, Math.min(2.4, ns));
+  // 以鼠标为中心缩放
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  state.tx = mx - (mx - state.tx) * (ns / state.scale);
+  state.ty = my - (my - state.ty) * (ns / state.scale);
+  state.scale = ns;
+  applyTransform();
+}, { passive: false });
+
+// 工具栏缩放按钮
+document.getElementById('zoomIn').onclick = () => zoomBy(1.2);
+document.getElementById('zoomOut').onclick = () => zoomBy(1 / 1.2);
+document.getElementById('zoomReset').onclick = () => { state.tx = 60; state.ty = 30; state.scale = 1; applyTransform(); };
+function zoomBy(factor) {
+  const rect = viewport.getBoundingClientRect();
+  const cx = rect.width / 2, cy = rect.height / 2;
+  let ns = Math.max(0.35, Math.min(2.4, state.scale * factor));
+  state.tx = cx - (cx - state.tx) * (ns / state.scale);
+  state.ty = cy - (cy - state.ty) * (ns / state.scale);
+  state.scale = ns;
+  applyTransform();
+}
+
+// ---------- 节点拖拽 ----------
+function bindNodeDrag() {
+  state.nodes.forEach(n => {
+    n.el.addEventListener('mousedown', (e) => onDragStart(e, n, 'node'));
+  });
+}
+
+// 通用拖拽（节点/批注头部）
+function onDragStart(e, item, kind) {
+  // 批注模式下批注 body 点击编辑不拖拽（body 不触发，只有 head 触发）
+  if (e.button !== 0) return;
+  const start = screenToWorld(e.clientX, e.clientY);
+  const origX = item.x, origY = item.y;
+  let moved = false;
+  e.preventDefault();
+  function onMove(ev) {
+    const w = screenToWorld(ev.clientX, ev.clientY);
+    const dx = w.x - start.x, dy = w.y - start.y;
+    if (Math.abs(dx * state.scale) > 3 || Math.abs(dy * state.scale) > 3) moved = true;
+    item.x = origX + dx;
+    item.y = origY + dy;
+    item.el.style.left = item.x + 'px';
+    item.el.style.top = item.y + 'px';
+    renderLinks();
+  }
+  function onUp() {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  }
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+// ---------- 批注：创建 ----------
+function addNote(x, y, text, focus) {
+  const id = 'note-' + (++state.noteSeq);
+  // 限制在画布范围
+  x = Math.max(10, Math.min(3780, x));
+  y = Math.max(10, Math.min(2940, y));
+  const el = document.createElement('div');
+  el.className = 'note';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.dataset.id = id;
+  el.innerHTML = `
+    <div class="note-head">
+      <span class="lbl">NOTE</span>
+      <button class="close" title="删除">×</button>
+    </div>
+    <div class="note-body" contenteditable="${state.mode === 'annotate' ? 'true' : 'false'}">${text}</div>
+    <div class="note-foot"><span class="target">→ 最近节点</span><span class="saved"></span></div>
+  `;
+  world.appendChild(el);
+  const note = { id, x, y, el, w: 200, h: 0, text };
+  state.notes.push(note);
+  requestAnimationFrame(() => { note.h = el.offsetHeight; note.w = el.offsetWidth; renderLinks(); });
+
+  // 拖拽头部
+  const head = el.querySelector('.note-head');
+  head.addEventListener('mousedown', (e) => onDragStart(e, note, 'note'));
+  // 关闭按钮
+  el.querySelector('.close').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    removeNote(id);
+  });
+  // 编辑自动保存
+  const body = el.querySelector('.note-body');
+  body.addEventListener('input', () => {
+    note.text = body.textContent;
+    saveNote(note);
+  });
+  body.addEventListener('blur', () => {
+    note.text = body.textContent;
+    saveNote(note);
+  });
+  // 阻止 body 上的 mousedown 冒泡到画布平移判断（viewport 已用 closest 排除 .note）
+  // 选择模式下点击不可编辑
+  if (focus && state.mode === 'annotate') {
+    setTimeout(() => { body.focus(); placeCaretEnd(body); }, 30);
+  }
+  renderLinks();
+  return note;
+}
+
+function removeNote(id) {
+  const idx = state.notes.findIndex(n => n.id === id);
+  if (idx < 0) return;
+  const n = state.notes[idx];
+  n.el.style.transition = 'transform 0.12s, opacity 0.12s';
+  n.el.style.transform = 'scale(0.6)';
+  n.el.style.opacity = '0';
+  setTimeout(() => { n.el.remove(); }, 120);
+  state.notes.splice(idx, 1);
+  renderLinks();
+}
+
+// 保存提示 + localStorage 持久化（可选）
+function saveNote(note) {
+  const saved = note.el.querySelector('.saved');
+  saved.textContent = '已保存';
+  saved.classList.remove('show');
+  void saved.offsetWidth;
+  saved.classList.add('show');
+  try {
+    const all = JSON.parse(localStorage.getItem('annotate_notes') || '[]');
+    const i = all.findIndex(x => x.id === note.id);
+    const rec = { id: note.id, x: note.x, y: note.y, text: note.text };
+    if (i >= 0) all[i] = rec; else all.push(rec);
+    localStorage.setItem('annotate_notes', JSON.stringify(all));
+  } catch (_) {}
+}
+
+function placeCaretEnd(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// ---------- 连接线：每条批注指向最近节点 ----------
+function renderLinks() {
+  // 清空旧线
+  linkLayer.innerHTML = '';
+  state.notes.forEach(note => {
+    if (!note.h) note.h = note.el.offsetHeight;
+    if (!note.w) note.w = note.el.offsetWidth;
+    // 批注中心点
+    const ncx = note.x + note.w / 2;
+    const ncy = note.y + note.h / 2;
+    // 找最近节点（中心距离）
+    let best = null, bestD = Infinity;
+    state.nodes.forEach(n => {
+      if (!n.h) n.h = n.el.offsetHeight;
+      const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+      const d = Math.hypot(cx - ncx, cy - ncy);
+      if (d < bestD) { bestD = d; best = n; }
+    });
+    if (!best) return;
+    // 更新批注脚部目标文字
+    const tgt = note.el.querySelector('.target');
+    if (tgt) tgt.textContent = '→ ' + best.title;
+    // 计算节点边缘点（从节点中心朝批注方向）
+    const cx = best.x + best.w / 2, cy = best.y + best.h / 2;
+    const ang = Math.atan2(ncy - cy, ncx - cx);
+    const edge = nodeEdgePoint(best, ang);
+    // 画虚线
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', edge.x);
+    line.setAttribute('y1', edge.y);
+    line.setAttribute('x2', ncx);
+    line.setAttribute('y2', ncy);
+    linkLayer.appendChild(line);
+    // 批注端小圆点
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', ncx);
+    c.setAttribute('cy', ncy);
+    c.setAttribute('r', 3);
+    linkLayer.appendChild(c);
+  });
+}
+
+// 求节点矩形边缘上沿角度方向的点
+function nodeEdgePoint(n, ang) {
+  const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+  const hw = n.w / 2, hh = (n.h || 80) / 2;
+  const tx = Math.cos(ang), ty = Math.sin(ang);
+  // 与矩形边界相交
+  let t = Infinity;
+  if (tx !== 0) t = Math.min(t, Math.abs(hw / tx));
+  if (ty !== 0) t = Math.min(t, Math.abs(hh / ty));
+  return { x: cx + tx * t, y: cy + ty * t };
+}
+
+// ---------- 启动 ----------
+initNodes();
+initDemoNotes();
+renderLinks();
+// 窗口尺寸变化时重算
+window.addEventListener('resize', () => { renderLinks(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>下一步 — 给 agent 配一块画布</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@300;400;500;600;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: #f4f1ec;
+  font-family: 'Manrope', sans-serif;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ================================================================
+   NAV
+   ================================================================ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 40px;
+  background: rgba(244,241,236,0.85); backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.nav-brand {
+  font-family: 'Instrument Serif', serif; font-size: 22px;
+  font-style: italic; letter-spacing: -0.02em;
+}
+.nav-links { display: flex; gap: 32px; }
+.nav-link {
+  font-size: 14px; font-weight: 400; color: #666;
+  text-decoration: none; transition: color 0.2s;
+}
+.nav-link:hover { color: #1a1a1a; }
+.nav-cta {
+  font-size: 13px; font-weight: 600; color: #1a1a1a;
+  text-decoration: none; padding: 8px 20px;
+  border: 1px solid #1a1a1a; transition: all 0.2s;
+}
+.nav-cta:hover { background: #1a1a1a; color: #f4f1ec; }
+
+/* ================================================================
+   LOGO 区 — 第一眼
+   ================================================================ */
+.logo-section {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 80px 40px 40px; position: relative;
+}
+.logo-section iframe {
+  width: 100%; max-width: 600px; height: 400px; border: none;
+}
+
+.logo-tagline {
+  font-family: 'Instrument Serif', serif; font-size: 32px;
+  font-weight: 400; text-align: center; margin-top: 20px;
+  letter-spacing: -0.02em; line-height: 1.3;
+}
+.logo-tagline em { font-style: italic; color: #c4944a; }
+.logo-sub {
+  font-size: 16px; color: #888; text-align: center;
+  margin-top: 12px; font-weight: 400;
+}
+
+/* ================================================================
+   PAIN — 痛点
+   ================================================================ */
+.pain {
+  padding: 100px 40px; max-width: 760px; margin: 0 auto;
+}
+.pain-label {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #999; margin-bottom: 20px;
+}
+.pain h2 {
+  font-family: 'Instrument Serif', serif; font-weight: 400;
+  font-size: 34px; line-height: 1.3; letter-spacing: -0.02em;
+  margin-bottom: 56px;
+}
+.pain h2 em { font-style: italic; color: #c4944a; }
+
+.pain-item {
+  margin-bottom: 44px; padding-bottom: 44px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.pain-item:last-of-type { border-bottom: none; }
+.pain-num {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #c4944a; margin-bottom: 10px;
+}
+.pain-item h3 {
+  font-family: 'Instrument Serif', serif; font-size: 26px;
+  font-weight: 400; letter-spacing: -0.02em; margin-bottom: 14px;
+  line-height: 1.25;
+}
+.pain-item h3 em { font-style: italic; }
+.pain-item p {
+  font-size: 16px; line-height: 1.7; color: #555; font-weight: 400;
+}
+
+.pain-answer {
+  margin-top: 48px; padding: 36px; background: #1a1a1a; color: #f4f1ec;
+}
+.pain-answer p {
+  font-family: 'Instrument Serif', serif; font-size: 22px;
+  line-height: 1.5; letter-spacing: -0.01em;
+}
+.pain-answer p em { font-style: italic; color: #c4944a; }
+
+/* ================================================================
+   SCENARIOS — 应用场景
+   ================================================================ */
+.scenarios {
+  padding: 80px 40px; max-width: 1000px; margin: 0 auto;
+}
+.scenarios-label {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #999; margin-bottom: 20px;
+}
+.scenarios h2 {
+  font-family: 'Instrument Serif', serif; font-weight: 400;
+  font-size: 34px; line-height: 1.3; letter-spacing: -0.02em;
+  margin-bottom: 48px;
+}
+.scenarios h2 em { font-style: italic; color: #c4944a; }
+.scenario-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+}
+.scenario-card {
+  padding: 28px; background: #fff;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.scenario-icon {
+  font-family: 'Instrument Serif', serif; font-size: 32px;
+  font-style: italic; color: #c4944a; margin-bottom: 12px;
+}
+.scenario-card h3 {
+  font-family: 'Instrument Serif', serif; font-size: 20px;
+  font-weight: 400; margin-bottom: 8px;
+}
+.scenario-card p {
+  font-size: 14px; color: #666; line-height: 1.5;
+}
+
+/* ================================================================
+   DEMOS — 一排一个，全宽
+   ================================================================ */
+.demos {
+  padding: 80px 40px 120px; max-width: 1200px; margin: 0 auto;
+}
+.demos-label {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #999; margin-bottom: 20px;
+}
+.demos h2 {
+  font-family: 'Instrument Serif', serif; font-weight: 400;
+  font-size: 34px; letter-spacing: -0.02em; margin-bottom: 64px;
+}
+.demos h2 em { font-style: italic; color: #c4944a; }
+
+.demo-block {
+  margin-bottom: 80px;
+}
+.demo-block:last-child { margin-bottom: 0; }
+
+.demo-header {
+  display: flex; align-items: baseline; gap: 16px;
+  margin-bottom: 12px;
+}
+.demo-number {
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  color: #c4944a;
+}
+.demo-header h3 {
+  font-family: 'Instrument Serif', serif; font-size: 28px;
+  font-weight: 400; letter-spacing: -0.01em;
+}
+.demo-header h3 em { font-style: italic; }
+
+.demo-desc {
+  font-size: 16px; color: #666; margin-bottom: 24px;
+  max-width: 680px; line-height: 1.6;
+}
+
+.demo-frame {
+  width: 100%; height: 500px;
+  border: 1px solid rgba(0,0,0,0.08);
+  overflow: hidden; position: relative; background: #fff;
+}
+.demo-frame iframe { width: 100%; height: 100%; border: none; }
+.demo-frame .live {
+  position: absolute; top: 12px; right: 12px; z-index: 10;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: #5b8c5a; padding: 3px 8px;
+  background: rgba(255,255,255,0.9); border: 1px solid rgba(91,140,90,0.15);
+}
+
+/* ACT 分隔 */
+.act-divider {
+  display: flex; align-items: center; gap: 16px;
+  margin: 80px 0 48px; padding-top: 32px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+.act-divider .num {
+  font-family: 'Instrument Serif', serif; font-size: 48px;
+  font-style: italic; color: #ddd; line-height: 1;
+}
+.act-divider .title {
+  font-family: 'Instrument Serif', serif; font-size: 24px;
+  font-weight: 400; flex: 1;
+}
+.act-divider .title em { font-style: italic; }
+.act-divider .tag {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: #999; text-transform: uppercase; letter-spacing: 0.1em;
+}
+
+/* ================================================================
+   COMPARE
+   ================================================================ */
+.compare {
+  padding: 100px 40px; background: #1a1a1a; color: #f4f1ec;
+}
+.compare-inner { max-width: 900px; margin: 0 auto; }
+.compare-label {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #666; margin-bottom: 16px;
+}
+.compare h2 {
+  font-family: 'Instrument Serif', serif; font-size: 34px;
+  font-weight: 400; margin-bottom: 48px; letter-spacing: -0.02em;
+}
+.compare h2 em { font-style: italic; color: #c4944a; }
+.compare-rows { border-top: 1px solid rgba(255,255,255,0.08); }
+.compare-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+  padding: 24px 0; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.compare-row .before { color: rgba(255,255,255,0.3); font-size: 16px; font-weight: 300; }
+.compare-row .after { color: rgba(255,255,255,0.8); font-size: 16px; font-weight: 400; }
+.compare-row .after::before { content: '→ '; color: #c4944a; font-weight: 600; }
+
+/* ================================================================
+   FOOTER
+   ================================================================ */
+.footer { background: #1a1a1a; padding: 40px; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); }
+.footer-brand { font-family: 'Instrument Serif', serif; font-size: 24px; font-style: italic; color: rgba(255,255,255,0.3); margin-bottom: 8px; }
+.footer p { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(255,255,255,0.15); }
+
+@media (max-width: 900px) {
+  .scenario-grid { grid-template-columns: 1fr; }
+  .demo-frame { height: 400px; }
+  .compare-row { grid-template-columns: 1fr; gap: 8px; }
+  .nav-links { display: none; }
+  .pain h2, .scenarios h2, .demos h2, .compare h2 { font-size: 26px; }
+  .logo-tagline { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <span class="nav-brand">下一步</span>
+  <div class="nav-links">
+    <a class="nav-link" href="#pain">痛点</a>
+    <a class="nav-link" href="#scenarios">场景</a>
+    <a class="nav-link" href="#demos">体验</a>
+    <a class="nav-link" href="#compare">对比</a>
+  </div>
+  <a class="nav-cta" href="#demos">体验 Demo</a>
+</nav>
+
+<!-- LOGO -->
+<section class="logo-section">
+  <iframe src="logo.html" title="Logo"></iframe>
+  <p class="logo-tagline">给 agent 配一块<em>画布</em></p>
+  <p class="logo-sub">对话窗口管执行，画布管全局，两者双向同步</p>
+</section>
+
+<!-- PAIN -->
+<section class="pain" id="pain">
+  <div class="pain-label">— 你遇到过这些问题吗 —</div>
+  <h2>对话很<em>强</em>，但你看不见<em>全局</em></h2>
+
+  <div class="pain-item">
+    <div class="pain-num">01</div>
+    <h3>对话写到第 30 轮，你已经开始<em>往上翻</em></h3>
+    <p>主角的背景设定是第几轮定的？那个方案选了 A 还是 B？伏笔埋了没？对话是流，流过去就没了，你只能往上翻。写小说翻几十轮找角色设定，做报税翻对话找哪个扣除项确认了，参加比赛翻对话找技术方案到底定了没。你不知道任务做到哪了、哪步漏了、逻辑链清不清。</p>
+  </div>
+
+  <div class="pain-item">
+    <div class="pain-num">02</div>
+    <h3>资料散落各处，agent <em>看不到你有什么</em></h3>
+    <p>参赛资料在 A 文件夹，小说素材在 B 文件夹，报税凭证在 C 文件夹。你和 agent 对话时，它不知道你电脑上已经有什么。每次都要手动说"参考一下那个文件"——但你自己都不一定记得那个文件在哪。没有资产的可视化管理，你和 agent 都在盲人摸象。</p>
+  </div>
+
+  <div class="pain-item">
+    <div class="pain-num">03</div>
+    <h3>能让 agent 帮忙，但不能在画布上<em>一起协作</em></h3>
+    <p>现在 agent 的交互只有对话一条路。选中一段内容想追问？得复制粘贴回对话框。想让 agent 改某个具体环节？得用文字描述清楚是哪个环节。在画布上点开节点、选中内容、直接提问——这种"看着同一张图协作"的体验，目前没有。</p>
+  </div>
+
+  <div class="pain-item">
+    <div class="pain-num">04</div>
+    <h3>思路是<em>树状的</em>，工具都是扁平的</h3>
+    <p>一个角色设定下挂着外貌、性格、背景故事，背景故事下又挂着童年、关键事件。一个需求下拆出方案、设计、实现，实现下又分前端、后端。思考天然是多层嵌套的树状结构，但现在的对话是线性的，任务列表是扁平的。没有一个地方能让你把思路像笔记一样展开、挂资料、加注释、多层嵌套。</p>
+  </div>
+
+  <div class="pain-answer">
+    <p><em>下一步</em> 是一款插件——嵌在 agent 旁边，对话窗口不动，外挂一个画布。节点是资料容器：可以挂图片、文件、文件夹，可以加注释，可以多层嵌套。你在画布上和 agent 看着同一张图协作，做完了一步步收归，最终变成一个文件夹。</p>
+  </div>
+</section>
+
+<!-- SCENARIOS -->
+<section class="scenarios" id="scenarios">
+  <div class="scenarios-label">— 适用场景 —</div>
+  <h2>任何需要和 agent <em>深度协作</em>的任务</h2>
+  <div class="scenario-grid">
+    <div class="scenario-card">
+      <div class="scenario-icon">✦</div>
+      <h3>小说创作</h3>
+      <p>角色卡、世界观、伏笔追踪、章节大纲，多层嵌套管理。几十轮对话不翻，画布上一目了然。</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">§</div>
+      <h3>报税整理</h3>
+      <p>收入凭证、专项扣除、申报流程，按模块归类。和 agent 确认每一步，画布上看到进度和缺口。</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">◆</div>
+      <h3>参赛项目</h3>
+      <p>需求分析、技术方案、界面设计、提交。agent 拆分任务到画布，你逐步完成，沉淀成模板。</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">▸</div>
+      <h3>产品开发</h3>
+      <p>需求拆解、前后端任务、设计稿、API 文档，全部挂到节点上。agent 和你看着同一张图协作。</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">✎</div>
+      <h3>学术研究</h3>
+      <p>文献综述、研究方法、数据分析、论文结构。资料和笔记分层挂载，不丢失上下文。</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">⬡</div>
+      <h3>学习笔记</h3>
+      <p>课程章节、知识点、代码片段、练习项目。学完一个收起一个，最终沉淀成知识体系。</p>
+    </div>
+  </div>
+</section>
+
+<!-- DEMOS -->
+<section class="demos" id="demos">
+  <div class="demos-label">— 体验 Demo —</div>
+  <h2>8 个<em>可交互</em>的 Demo</h2>
+
+  <!-- ACT 1: 看见全局 -->
+  <div class="act-divider">
+    <span class="num">01</span>
+    <span class="title">扫描你的<em>资产</em></span>
+    <span class="tag">看见全局</span>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">01</span>
+      <h3>全局<em>资产扫描</em></h3>
+    </div>
+    <p class="demo-desc">点击中心按钮启动雷达扫描，文件按板块飞入画布。每个板块显示任务数、完成数、资产数。点击板块卡片展开文件列表，新建模块。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-scan.html"></iframe>
+    </div>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">02</span>
+      <h3>双向<em>同步</em></h3>
+    </div>
+    <p class="demo-desc">左侧 agent 对话自动播放，右侧画布实时更新节点。点击节点"完成"按钮，对话窗口出现 agent 确认。选中节点内容可以提问，agent 回复后画布更新。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-sync.html"></iframe>
+    </div>
+  </div>
+
+  <!-- ACT 2: 双向协作 -->
+  <div class="act-divider">
+    <span class="num">02</span>
+    <span class="title">画布和对话<em>双向</em>同步</span>
+    <span class="tag">双向协作</span>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">03</span>
+      <h3>节点是<em>资料容器</em></h3>
+    </div>
+    <p class="demo-desc">节点不只是任务步骤。可以挂文件、图片、文件夹，可以加注释，可以多层嵌套展开——父节点到子节点到子节点的子节点。双击编辑正文，点标题展开折叠子节点，完成后收归成文件夹。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-edit.html"></iframe>
+    </div>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">04</span>
+      <h3>Agent 编辑时<em>实时看见</em></h3>
+    </div>
+    <p class="demo-desc">agent 在文件里写内容时，你不用翻对话——画布上的文件节点实时更新。agent 每写一句，节点上的预览同步增长，有闪烁提示。节点顶部显示"编辑中"状态。这就是"知其所以然"。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-live-edit.html"></iframe>
+    </div>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">05</span>
+      <h3>批注<em>工具</em></h3>
+    </div>
+    <p class="demo-desc">切到批注模式，点击画布任意位置贴批注。可编辑、可拖拽、可删除。虚线自动连接到最近节点，不丢失上下文。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-annotate.html"></iframe>
+    </div>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">06</span>
+      <h3>Agent<em>协作</em></h3>
+    </div>
+    <p class="demo-desc">选中节点内容→弹出提问框→agent 回复→节点自动更新。也可以让 agent 直接在画布新建节点，看着同一张图协作。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-agent.html"></iframe>
+    </div>
+  </div>
+
+  <!-- ACT 3: 沉淀复用 -->
+  <div class="act-divider">
+    <span class="num">03</span>
+    <span class="title">做完变<em>模板</em>，下次直接调用</span>
+    <span class="tag">沉淀复用</span>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">07</span>
+      <h3>抽屉<em>收归</em></h3>
+    </div>
+    <p class="demo-desc">点击"收起"按钮，节点折叠成一行标题。完成节点时自动收起。可以全部收起或全部展开，画布保持清爽不丢信息。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-collapse.html"></iframe>
+    </div>
+  </div>
+
+  <div class="demo-block">
+    <div class="demo-header">
+      <span class="demo-number">08</span>
+      <h3>模板<em>沉淀</em></h3>
+    </div>
+    <p class="demo-desc">已完成节点汇聚成模板卡片，存入模板库。点击模板→确认应用→展开成新任务节点飞入画布。流程从真实执行中长出来，下次直接调用。</p>
+    <div class="demo-frame">
+      <span class="live">LIVE</span>
+      <iframe src="demo-template.html"></iframe>
+    </div>
+  </div>
+
+</section>
+
+<!-- COMPARE -->
+<section class="compare" id="compare">
+  <div class="compare-inner">
+    <div class="compare-label">— 对比 —</div>
+    <h2>和<em>对话流</em>的区别</h2>
+    <div class="compare-rows">
+      <div class="compare-row">
+        <div class="before">30轮后找不到某个决定是第几轮做的</div>
+        <div class="after">画布上一眼看到全局：进度、资产、缺口</div>
+      </div>
+      <div class="compare-row">
+        <div class="before">对话是流，流过去就没了，只能往上翻</div>
+        <div class="after">双向同步，画布和对话都是工作面</div>
+      </div>
+      <div class="compare-row">
+        <div class="before">压缩是有损的，细节丢了</div>
+        <div class="after">节点结构化保留，点开看完整内容</div>
+      </div>
+      <div class="compare-row">
+        <div class="before">看不到全局进度和缺口</div>
+        <div class="after">完成的收起，沉淀成模板，下次复用</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-brand">下一步</div>
+  <p>给 agent 配一块画布 · TRAE AI 创造力大赛参赛作品</p>
+</footer>
+
+<script>
+// 滚动揭示
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.05 });
+
+document.querySelectorAll('.pain-item, .scenario-card, .demo-block, .act-divider').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(24px)';
+  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+  obs.observe(el);
+});
+</script>
+
+</body>
+</html>
