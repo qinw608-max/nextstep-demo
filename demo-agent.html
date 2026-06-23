@@ -209,7 +209,7 @@ body {
 .modal-mask.show { display: flex; animation: fadeIn 0.15s; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  width: 460px; max-width: 92vw; background: var(--bg-panel);
+  width: 400px; max-width: 90vw; max-height: 85vh; overflow-y: auto; background: var(--bg-panel);
   border: 2px solid var(--border-hi); box-shadow: 6px 6px 0 0 var(--shadow);
   animation: modalIn 0.18s steps(4);
 }
@@ -230,10 +230,11 @@ body {
   font-family: 'VT323', monospace; font-size: 17px; color: var(--text); outline: none;
 }
 .modal-body textarea:focus { border-color: var(--primary); }
-.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .quick button {
-  padding: 4px 8px; border: 1px solid var(--border); background: var(--bg-card);
+  padding: 5px 10px; border: 1px solid var(--border); background: var(--bg-card);
   font-family: 'VT323', monospace; font-size: 15px; color: var(--text-dim); cursor: pointer;
+  white-space: nowrap;
 }
 .quick button:hover { border-color: var(--primary); color: var(--primary); }
 .modal-foot { padding: 10px 16px; border-top: 2px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
