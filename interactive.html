@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#020507">
+  <title>NextStep / Agent Execution Canvas</title>
+  <meta name="description" content="NextStep 是一款正在开发的本地执行画布，将任务、文件、决策与结果组织成可检查的节点。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23020507'/%3E%3Cpath d='M16 18h10l12 14V18h10v28H38L26 32v14H16z' fill='%2340bd79'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Share+Tech+Mono&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020507;
+      --paper: #f1f5f4;
+      --muted: rgba(225, 235, 232, .55);
+      --faint: rgba(225, 235, 232, .28);
+      --line: rgba(225, 239, 235, .15);
+      --line-strong: rgba(225, 239, 235, .28);
+      --signal: #40bd79;
+      --signal-soft: rgba(64, 189, 121, .16);
+      --mono: "Share Tech Mono", Consolas, monospace;
+      --pixel: "Silkscreen", "Share Tech Mono", monospace;
+      --sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--bg); scroll-behavior: smooth; }
+    body {
+      min-width: 320px;
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--paper);
+      background: var(--bg);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+    body.modal-open { overflow: hidden; }
+    button, a { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; }
+    ::selection { color: #03130c; background: rgba(82, 217, 143, .88); }
+    [hidden] { display: none !important; }
+
+    .ambient,
+    .liquid-field,
+    .grain-texture,
+    .liquid-vignette {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .ambient { z-index: 0; overflow: hidden; background: var(--bg); }
+    .liquid-field { z-index: 1; display: block; }
+    .liquid-vignette {
+      z-index: 2;
+      background:
+        linear-gradient(90deg, rgba(0, 2, 5, .96), rgba(0, 2, 5, .52) 28%, rgba(0, 2, 5, .08) 69%, rgba(0, 2, 5, .42)),
+        radial-gradient(circle at 70% 50%, transparent 0 24%, rgba(0, 2, 5, .26) 61%, rgba(0, 2, 5, .86) 100%);
+    }
+    .grain-texture { z-index: 3; opacity: .58; mix-blend-mode: screen; image-rendering: auto; }
+
+    .topbar {
+      position: fixed;
+      z-index: 50;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: clamp(1.35rem, 3vw, 3rem) clamp(1.35rem, 3.4vw, 4rem);
+      pointer-events: none;
+      font: .68rem/1 var(--pixel);
+      letter-spacing: .08em;
+    }
+    .topbar p { margin: 0; }
+    .version { color: rgba(241, 247, 246, .72); }
+    .version i { display: inline-block; width: .42rem; height: .42rem; margin-left: .55rem; background: var(--signal); box-shadow: 0 0 1.2rem rgba(64, 189, 121, .72); }
+    .dev-state { color: rgba(76, 207, 135, .82); }
+    .dev-state span { color: rgba(241, 247, 246, .5); }
+    .topbar-actions { display: flex; align-items: center; gap: 1rem; pointer-events: auto; }
+    .portfolio-return {
+      min-height: 2.35rem;
+      padding: 0 .8rem;
+      border: 1px solid rgba(225, 239, 235, .18);
+      color: rgba(230, 239, 236, .64);
+      background: rgba(2, 7, 9, .28);
+      font: .64rem/1 var(--mono);
+      letter-spacing: .08em;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+    }
+    .portfolio-return:hover { color: #06110c; border-color: rgba(79, 214, 143, .8); background: rgba(62, 190, 119, .9); }
+
+    main { position: relative; z-index: 10; }
+    .hero {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 100svh;
+      padding: 8rem 1.5rem 6rem;
+      text-align: center;
+    }
+    .hero-inner { width: min(92vw, 70rem); margin-top: 6vh; }
+    .hero-kicker {
+      margin: 0 0 1.7rem;
+      color: rgba(229, 239, 236, .38);
+      font: .64rem/1 var(--mono);
+      letter-spacing: .28em;
+    }
+    .brand {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      margin: 0;
+      font: 400 clamp(2.9rem, 4.5vw, 5.6rem)/.88 var(--pixel);
+      letter-spacing: .065em;
+      white-space: nowrap;
+    }
+    .brand strong { color: #30a663; font-weight: 400; }
+    .brand b { margin-left: .08em; font-weight: 400; animation: caret 1s steps(1) infinite; }
+    @keyframes caret { 50% { opacity: .1; } }
+    .brand-sub { margin: 1.75rem 0 0; color: rgba(231, 240, 238, .5); font: .72rem/1 var(--mono); letter-spacing: .66em; text-indent: .66em; }
+    .hero-line { max-width: 43rem; margin: 4.4rem auto 0; font-size: clamp(1.65rem, 3vw, 3.4rem); font-weight: 500; line-height: 1.22; letter-spacing: -.04em; text-wrap: balance; }
+    .hero-desc { max-width: 40rem; margin: 1.4rem auto 0; color: var(--muted); font-size: clamp(.9rem, 1.2vw, 1.05rem); line-height: 1.8; text-wrap: balance; }
+    .status-line { display: flex; flex-wrap: wrap; justify-content: center; gap: .7rem 1.4rem; margin: 2rem 0 0; color: rgba(229, 239, 236, .48); font: .68rem/1.4 var(--mono); letter-spacing: .12em; }
+    .status-line span + span::before { margin-right: 1.4rem; color: var(--signal); content: "/"; }
+    .hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .8rem; margin-top: 2.1rem; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 3.2rem;
+      padding: 0 1.25rem;
+      border: 1px solid var(--line-strong);
+      color: rgba(244, 248, 247, .9);
+      background: rgba(2, 7, 9, .22);
+      text-decoration: none;
+      font: .72rem/1 var(--mono);
+      letter-spacing: .12em;
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+      transition: border-color .2s ease, background .2s ease, color .2s ease, transform .2s ease;
+    }
+    .button:hover { border-color: rgba(79, 214, 143, .8); background: rgba(62, 190, 119, .85); color: #06110c; transform: translateY(-2px); }
+    .button--quiet { border-color: var(--line); color: var(--muted); }
+    .hero-note { max-width: 38rem; margin: 1.4rem auto 0; color: rgba(225, 235, 232, .34); font: .68rem/1.6 var(--mono); }
+
+    .section { position: relative; padding: clamp(7rem, 12vw, 11rem) clamp(1.5rem, 6vw, 8rem); }
+    .section-head { max-width: 68rem; margin: 0 auto clamp(4rem, 7vw, 7rem); }
+    .section-label { margin: 0 0 1.4rem; color: rgba(226, 238, 234, .42); font: .68rem/1 var(--mono); letter-spacing: .2em; }
+    .section-head h2 { max-width: 53rem; margin: 0; font-size: clamp(2.3rem, 5.2vw, 6.4rem); font-weight: 500; line-height: 1.05; letter-spacing: -.055em; text-wrap: balance; }
+    .section-head > p:last-child { max-width: 44rem; margin: 1.6rem 0 0; color: var(--muted); font-size: 1rem; line-height: 1.85; }
+    .anchor-sentinel { position: absolute; top: 0; }
+    #scenarios { padding-top: clamp(4rem, 7vw, 6rem); }
+    #scenarios .section-head { max-width: 96rem; margin-bottom: clamp(2rem, 3vw, 3rem); }
+    #scenarios .section-head h2 { max-width: 42rem; font-size: clamp(2.35rem, 4.4vw, 5rem); }
+
+    .proof-flow { display: grid; grid-template-columns: minmax(12rem, .34fr) minmax(0, 1.66fr); gap: clamp(1.5rem, 3vw, 3rem); max-width: 96rem; margin: 0 auto; align-items: start; }
+    .proof-steps { display: grid; align-content: start; }
+    .proof-step {
+      min-height: 5.9rem;
+      padding: 1.05rem 1rem 1.05rem 0;
+      border: 0;
+      border-top: 1px solid var(--line);
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+    .proof-step:last-child { border-bottom: 1px solid var(--line); }
+    .proof-step small { display: block; margin-bottom: .7rem; color: rgba(225, 236, 233, .62); font: .7rem/1 var(--mono); letter-spacing: .1em; }
+    .proof-step strong { display: block; color: rgba(238, 245, 243, .74); font-size: clamp(1.05rem, 1.55vw, 1.35rem); font-weight: 500; line-height: 1.35; letter-spacing: -.02em; transition: color .24s ease, transform .24s ease; }
+    .proof-step p { display: none; max-width: 18rem; margin: .7rem 0 0; color: rgba(225, 235, 232, .62); font-size: .82rem; line-height: 1.6; }
+    .proof-step.is-active strong, .proof-step:hover strong { color: var(--paper); transform: translateX(.4rem); }
+    .proof-step.is-active p { display: block; color: rgba(225, 235, 232, .72); }
+    .proof-step.is-active small { color: rgba(70, 207, 136, .88); }
+
+    .proof-screen { position: sticky; top: 8vh; height: 84svh; min-height: 620px; overflow: hidden; border: 1px solid var(--line-strong); background: #071017; box-shadow: 0 3rem 8rem rgba(0, 0, 0, .5); }
+    .proof-screen-head { position: absolute; z-index: 4; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; min-height: 2rem; padding: .62rem .85rem; color: rgba(240, 245, 244, .76); background: rgba(2, 6, 8, .94); border-bottom: 1px solid var(--line); font: .68rem/1 var(--mono); letter-spacing: .06em; pointer-events: none; }
+    .proof-screen iframe { display: block; width: 100%; height: calc(100% - 2rem); min-height: 0; margin-top: 2rem; padding: 0; border: 0; background: #071017; }
+    .proof-loading { position: absolute; z-index: 3; inset: 2rem 0 0; display: grid; place-items: center; color: rgba(240, 245, 244, .68); background: #050809; font: .72rem/1 var(--mono); letter-spacing: .08em; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .proof-screen.is-loading .proof-loading { opacity: 1; }
+
+    .status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 80rem; margin: 0 auto; border: 1px solid var(--line); }
+    .status-panel { min-height: 38rem; padding: clamp(2rem, 4vw, 4.5rem); background: rgba(3, 8, 10, .34); backdrop-filter: blur(14px); }
+    .status-panel + .status-panel { border-left: 1px solid var(--line); }
+    .status-panel h3 { margin: 0 0 2.4rem; color: rgba(239, 246, 244, .9); font: .76rem/1 var(--mono); letter-spacing: .18em; }
+    .status-panel--available h3 { color: rgba(77, 211, 141, .9); }
+    .status-panel ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+    .status-panel li { display: flex; gap: 1rem; padding: 1rem 0; border-top: 1px solid var(--line); color: rgba(229, 237, 235, .66); line-height: 1.55; }
+    .status-panel li::before { flex: 0 0 auto; color: var(--signal); font-family: var(--mono); content: "01"; opacity: .58; }
+    .status-panel li:nth-child(2)::before { content: "02"; }
+    .status-panel li:nth-child(3)::before { content: "03"; }
+    .status-panel li:nth-child(4)::before { content: "04"; }
+    .status-panel li:nth-child(5)::before { content: "05"; }
+    .status-panel li:nth-child(6)::before { content: "06"; }
+    .status-panel li:nth-child(7)::before { content: "07"; }
+    .status-panel li:nth-child(8)::before { content: "08"; }
+    .status-panel li:nth-child(9)::before { content: "09"; }
+    .status-foot { max-width: 80rem; margin: 1.2rem auto 0; color: rgba(225, 235, 232, .34); font: .68rem/1.6 var(--mono); }
+
+    .system-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: clamp(3rem, 8vw, 9rem); max-width: 80rem; margin: 0 auto; }
+    .system-copy h2 { margin: 0; font-size: clamp(2.4rem, 5vw, 5.8rem); font-weight: 500; line-height: 1.04; letter-spacing: -.055em; }
+    .system-copy p { max-width: 40rem; margin: 1.7rem 0 0; color: var(--muted); line-height: 1.85; }
+    .principles { border-top: 1px solid var(--line); }
+    .principle { display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; padding: 1.3rem 0; border-bottom: 1px solid var(--line); }
+    .principle strong { color: rgba(72, 204, 136, .82); font: .68rem/1.4 var(--mono); letter-spacing: .1em; }
+    .principle span { color: rgba(225, 235, 232, .56); line-height: 1.55; }
+    .tech-line { max-width: 80rem; margin: 5rem auto 0; padding: 1.2rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: rgba(225, 236, 233, .44); font: .69rem/1.7 var(--mono); letter-spacing: .13em; text-align: center; }
+
+    .prototype-note { max-width: 78rem; margin: -2.8rem auto 3rem; padding: 1rem 1.2rem; border-left: 2px solid rgba(68, 203, 135, .72); color: rgba(225, 235, 232, .5); background: rgba(4, 10, 11, .42); font-size: .88rem; line-height: 1.7; }
+    .lab-list { max-width: 78rem; margin: 0 auto; border-top: 1px solid var(--line); }
+    .lab-row {
+      display: grid;
+      grid-template-columns: 4rem minmax(10rem, .85fr) minmax(16rem, 1.3fr) 12rem;
+      gap: 1rem;
+      align-items: center;
+      width: 100%;
+      min-height: 7rem;
+      padding: 1.1rem 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      transition: background .2s ease, padding .2s ease;
+    }
+    .lab-row:hover, .lab-row:focus-visible { padding-left: 1rem; padding-right: 1rem; background: rgba(236, 245, 242, .045); outline: 0; }
+    .lab-index { color: rgba(69, 202, 134, .72); font: .68rem/1 var(--mono); }
+    .lab-title strong { display: block; color: rgba(240, 246, 244, .86); font-size: 1.05rem; font-weight: 500; }
+    .lab-title small { display: block; margin-top: .5rem; color: var(--faint); font: .62rem/1 var(--mono); letter-spacing: .1em; }
+    .lab-desc { color: rgba(225, 235, 232, .48); font-size: .9rem; line-height: 1.65; }
+    .lab-status { justify-self: end; color: rgba(225, 235, 232, .36); font: .62rem/1.5 var(--mono); letter-spacing: .09em; text-align: right; }
+    .lab-status[data-level="core"] { color: rgba(72, 208, 138, .72); }
+
+    .site-footer { position: relative; z-index: 10; display: flex; justify-content: space-between; gap: 2rem; padding: 3rem clamp(1.5rem, 4vw, 5rem); border-top: 1px solid var(--line); color: rgba(225, 235, 232, .35); font: .66rem/1.6 var(--mono); letter-spacing: .09em; }
+    .site-footer p { margin: 0; }
+    .site-footer a { text-decoration: none; }
+    .site-footer a:hover { color: rgba(240, 246, 244, .8); }
+
+    .demo-modal { position: fixed; z-index: 100; inset: 0; padding: clamp(.8rem, 2vw, 2rem); background: rgba(0, 3, 5, .94); backdrop-filter: blur(18px); }
+    .modal-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; border: 1px solid var(--line-strong); background: #050809; box-shadow: 0 2rem 8rem rgba(0, 0, 0, .7); }
+    .modal-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: center; min-height: 4.1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--line); }
+    .modal-meta { min-width: 0; }
+    .modal-meta small { display: block; color: rgba(70, 207, 136, .78); font: .62rem/1 var(--mono); letter-spacing: .12em; }
+    .modal-meta strong { display: block; overflow: hidden; margin-top: .45rem; color: rgba(240, 246, 244, .88); font-size: .92rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+    .modal-actions { display: flex; gap: .45rem; align-items: center; }
+    .modal-action { min-height: 2.35rem; padding: 0 .8rem; border: 1px solid var(--line); color: rgba(230, 239, 236, .62); background: transparent; text-decoration: none; font: .64rem/1 var(--mono); cursor: pointer; }
+    .modal-action:hover { color: var(--paper); border-color: var(--line-strong); }
+    .modal-frame { width: 100%; height: 100%; min-height: 0; border: 0; background: #ece8dd; }
+
+    .button:focus-visible,
+    .proof-step:focus-visible,
+    .modal-action:focus-visible { outline: 2px solid rgba(78, 213, 142, .9); outline-offset: 3px; }
+
+    @media (max-width: 900px) {
+      .brand { font-size: clamp(2.45rem, 10.5vw, 5rem); letter-spacing: .025em; }
+      .proof-flow { grid-template-columns: 1fr; gap: 1.25rem; }
+      .proof-steps { display: flex; order: 0; gap: .45rem; overflow-x: auto; padding: 0 0 .45rem; scrollbar-width: none; -ms-overflow-style: none; }
+      .proof-steps::-webkit-scrollbar { display: none; }
+      .proof-step { flex: 0 0 10.5rem; min-height: 5.7rem; padding: 1rem; border: 1px solid var(--line); }
+      .proof-step:last-child { border-bottom: 1px solid var(--line); }
+      .proof-step small { margin-bottom: .55rem; }
+      .proof-step strong { font-size: 1rem; }
+      .proof-step p { display: none !important; }
+      .proof-screen { position: relative; z-index: 1; top: auto; height: 72svh; min-height: 520px; }
+      .status-grid, .system-grid { grid-template-columns: 1fr; }
+      .status-panel + .status-panel { border-left: 0; border-top: 1px solid var(--line); }
+      .lab-row { grid-template-columns: 3rem minmax(0, 1fr) 9rem; }
+      .lab-desc { grid-column: 2 / -1; padding-right: 1rem; }
+    }
+
+    @media (max-width: 620px) {
+      .topbar { font-size: .55rem; }
+      .topbar-actions { gap: .55rem; }
+      .portfolio-return { min-height: 2rem; padding: 0 .6rem; font-size: .56rem; }
+      .hero { padding-top: 7rem; }
+      .hero-kicker { letter-spacing: .18em; }
+      .brand-sub { font-size: .62rem; letter-spacing: .42em; text-indent: .42em; }
+      .hero-line { margin-top: 3.4rem; }
+      .status-line span + span::before { display: none; }
+      .section { padding-left: 1.25rem; padding-right: 1.25rem; }
+      .section-head h2,
+      #scenarios .section-head h2 { max-width: 100%; font-size: clamp(2rem, 9.8vw, 2.55rem); line-height: 1.1; letter-spacing: -.045em; overflow-wrap: anywhere; word-break: normal; text-wrap: wrap; }
+      .section-head > p:last-child { max-width: 100%; font-size: .94rem; line-height: 1.72; overflow-wrap: anywhere; }
+      .proof-screen { height: 72svh; min-height: 520px; }
+      .status-panel { min-height: auto; padding: 2rem 1.4rem; }
+      .principle { grid-template-columns: 1fr; }
+      .lab-row { grid-template-columns: 2.5rem minmax(0, 1fr); }
+      .lab-status { grid-column: 2; justify-self: start; text-align: left; }
+      .lab-desc { grid-column: 2; }
+      .site-footer { flex-direction: column; }
+      .modal-head { grid-template-columns: 1fr; }
+      .modal-actions { flex-wrap: wrap; }
+      .modal-frame { min-height: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <canvas class="liquid-field" id="liquid-field"></canvas>
+    <div class="liquid-vignette"></div>
+    <canvas class="grain-texture" id="grain-texture"></canvas>
+  </div>
+  <header class="topbar" aria-label="版本状态">
+    <p class="version">V0.1.0 <i></i></p>
+    <div class="topbar-actions">
+      <button class="portfolio-return" type="button" data-portfolio-return hidden>← 返回作品页</button>
+      <p class="dev-state"><span>[</span> IN DEVELOPMENT <span>]</span></p>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-inner">
+        <p class="hero-kicker">AGENT EXECUTION CANVAS</p>
+        <h1 class="brand" id="hero-title"><span>NEXT</span><strong>STEP</strong><b>_</b></h1>
+        <p class="brand-sub">ELIMINATOR</p>
+        <p class="hero-line">让 Agent 的工作，变成一张可以参与的执行图。</p>
+        <p class="hero-desc">Agent 继续在原窗口执行；下一步在旁边把任务、文件、决定和问题自动归位，让过程可见、结果可追。</p>
+        <p class="status-line"><span>ELECTRON MVP</span><span>LOCAL-FIRST</span><span>ACTIVE DEVELOPMENT</span></p>
+        <div class="hero-actions">
+          <a class="button" href="#scenarios">体验交互画布</a>
+          <a class="button button--quiet" href="#compare">查看开发状态</a>
+        </div>
+        <p class="hero-note">当前桌面 MVP 已具备真实画布、嵌套节点、流式文件、选区提问与来源追踪；正式 Agent 适配和流程复用仍在开发中。</p>
+      </div>
+    </section>
+
+    <section class="section" id="scenarios" aria-labelledby="workflow-title">
+      <span class="anchor-sentinel" id="pain"></span>
+      <header class="section-head" data-reveal>
+        <p class="section-label">01 / 八项核心能力</p>
+        <h2 id="workflow-title">不是一张概念图，是八个可以亲手操作的执行场景。</h2>
+        <p>从资产进入画布，到协作、批注、收归与复用；每项能力保留自己的任务和交互重点。</p>
+      </header>
+
+      <div class="proof-flow">
+        <div class="proof-steps">
+          <button class="proof-step is-active" type="button" data-proof-file="demo-scan.html" data-title="全局资产扫描">
+            <small>01 / 资产进入</small>
+            <strong>全局资产扫描</strong>
+            <p>把分散文件识别成可继续工作的项目节点。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-sync.html" data-title="双向同步">
+            <small>02 / 对话落图</small>
+            <strong>双向同步</strong>
+            <p>Agent 的动作进入画布，节点结果回到对话。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-edit.html" data-title="节点资料容器">
+            <small>03 / 多层上下文</small>
+            <strong>节点资料容器</strong>
+            <p>任务、文件与子空间保留在同一个执行对象里。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-live-edit.html" data-title="实时编辑">
+            <small>04 / 工作可见</small>
+            <strong>实时编辑</strong>
+            <p>文件节点逐行增长，修订和当前写入位置同步可见。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-annotate.html" data-title="上下文批注">
+            <small>05 / 就地反馈</small>
+            <strong>上下文批注</strong>
+            <p>意见留在对应节点附近，并保持关联。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-agent.html" data-title="Agent 协作">
+            <small>06 / 问题回写</small>
+            <strong>Agent 协作</strong>
+            <p>从具体内容提问，答案写回原位置并可继续执行。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-collapse.html" data-title="抽屉收归">
+            <small>07 / 降低噪声</small>
+            <strong>抽屉收归</strong>
+            <p>完成项收起但不消失，画布只保留当前重点。</p>
+          </button>
+          <button class="proof-step" type="button" data-proof-file="demo-template.html" data-title="模板沉淀">
+            <small>08 / 经验复用</small>
+            <strong>模板沉淀</strong>
+            <p>把真实完成的流程保存为下一次可调用的起点。</p>
+          </button>
+        </div>
+
+        <div class="proof-screen" id="proof-screen">
+          <div class="proof-screen-head"><span id="proof-path" aria-live="polite">功能演示 01 / 08 · 全局资产扫描</span><span>可交互原型</span></div>
+          <div class="proof-loading">正在载入功能演示</div>
+          <iframe id="proof-frame" src="demo-scan.html?embed=proof&amp;v=20260713-8" title="全局资产扫描 · NextStep 功能演示"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="compare" aria-labelledby="status-title">
+      <header class="section-head" data-reveal>
+        <p class="section-label">02 / STATUS</p>
+        <h2 id="status-title">现在能做什么，也明确还不能做什么。</h2>
+        <p>这是一个正在开发的桌面 MVP。公开页面区分真实能力、交互原型和未来方向。</p>
+      </header>
+
+      <div class="status-grid">
+        <article class="status-panel status-panel--available" data-reveal>
+          <h3>AVAILABLE NOW</h3>
+          <ul>
+            <li>可嵌套节点与子画布导航</li>
+            <li>节点连线与视觉区域 Frame</li>
+            <li>Markdown、代码、图片和 HTML 文件节点</li>
+            <li>全局搜索并定位到具体内容行</li>
+            <li>文档选区批注与提问</li>
+            <li>内容流式写入与编辑状态显示</li>
+            <li>多选、批量移动、复制和删除</li>
+            <li>撤销、保存、导入与自动布局</li>
+            <li>本地 JSON 持久化</li>
+          </ul>
+        </article>
+        <article class="status-panel" data-reveal>
+          <h3>BUILDING</h3>
+          <ul>
+            <li>长对话自动识别并收归为节点</li>
+            <li>Codex、Cursor、TRAE 与 Claude Code 正式适配</li>
+            <li>Agent 结果自动回写与操作前确认</li>
+            <li>修改 diff、完整操作历史与 redo</li>
+            <li>从真实执行过程抽取可复用模板</li>
+            <li>稳定安装包、公开发行与开源准备</li>
+          </ul>
+        </article>
+      </div>
+      <p class="status-foot">BUILDING 表示已经进入产品路线，但尚不作为当前可用能力承诺。</p>
+    </section>
+
+    <section class="section" aria-labelledby="system-title">
+      <div class="system-grid">
+        <div class="system-copy" data-reveal>
+          <p class="section-label">03 / SYSTEM</p>
+          <h2 id="system-title">少一点魔法，多一点可追踪。</h2>
+          <p>当前桌面版由 Electron、React、TypeScript、Zustand 与 React Flow 构建。画布数据保存在本地 JSON，MCP Bridge 提供外部调用入口。</p>
+        </div>
+        <div class="principles">
+          <div class="principle" data-reveal><strong>LOCAL FIRST</strong><span>工作数据优先保留在本地。</span></div>
+          <div class="principle" data-reveal><strong>VISIBLE STATE</strong><span>节点明确显示来源、状态和执行变化。</span></div>
+          <div class="principle" data-reveal><strong>REVERSIBLE</strong><span>关键操作可以撤销、保存和恢复。</span></div>
+          <div class="principle" data-reveal><strong>SMALL STEPS</strong><span>每次只解决一个明确问题，并保留验收路径。</span></div>
+        </div>
+      </div>
+      <p class="tech-line">ELECTRON 37 / REACT 19 / TYPESCRIPT 6 / ZUSTAND 5 / REACT FLOW 12 / LOCAL JSON / MCP</p>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <p>NEXTSTEP / DEVELOPMENT PREVIEW / 2026</p>
+    <p><a href="logo.html">LOGO STUDY</a> / <a href="#top">BACK TO TOP</a></p>
+  </footer>
+
+  <div class="demo-modal" id="demo-modal" hidden>
+    <div class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-head">
+        <div class="modal-meta"><small id="modal-tag">可操作原型</small><strong id="modal-title">节点即画布</strong></div>
+        <div class="modal-actions">
+          <button class="modal-action" type="button" data-modal-prev>上一个</button>
+          <button class="modal-action" type="button" data-modal-next>下一个</button>
+          <a class="modal-action" id="modal-direct" href="demo-edit.html?embed=standalone&amp;v=20260712-3" target="_blank" rel="noopener">独立查看</a>
+          <button class="modal-action" type="button" data-modal-close>关闭</button>
+        </div>
+      </header>
+      <iframe class="modal-frame" id="modal-frame" src="about:blank" title="NextStep 交互原型"></iframe>
+    </div>
+  </div>
+
+  <script src="assets/vendor/gsap/gsap.min.js"></script>
+  <script src="assets/vendor/gsap/ScrollTrigger.min.js"></script>
+  <script>
+    (() => {
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const fieldCanvas = document.getElementById('liquid-field');
+      const grainCanvas = document.getElementById('grain-texture');
+      const routeParams = new URLSearchParams(location.search);
+      const fromPortfolio = ['personal-site', 'github-pages', 'project'].includes(routeParams.get('from'));
+      const portfolioReturn = document.querySelector('[data-portfolio-return]');
+      let portfolioLeaving = false;
+
+      function portfolioFallback() {
+        try {
+          const referrer = new URL(document.referrer);
+          if (/nextstep\.html$/i.test(referrer.pathname)) {
+            referrer.search = '?from=demo';
+            referrer.hash = 'overview';
+            return referrer.href;
+          }
+        } catch {}
+        return new URL('./?from=demo#overview', location.href).href;
+      }
+
+      function canReturnThroughHistory() {
+        if (history.length <= 1 || !document.referrer) return false;
+        try {
+          const referrer = new URL(document.referrer);
+          const sameProject = referrer.origin === location.origin
+            && (/\/index\.html$/i.test(referrer.pathname) || referrer.pathname.endsWith('/'));
+          const portfolioPage = /\/nextstep\.html$/i.test(referrer.pathname);
+          return sameProject || portfolioPage;
+        } catch {
+          return false;
+        }
+      }
+
+      function returnToPortfolio(event) {
+        event?.preventDefault();
+        if (!fromPortfolio || portfolioLeaving) return;
+        portfolioLeaving = true;
+        location.assign(portfolioFallback());
+      }
+
+      if (fromPortfolio) {
+        portfolioReturn.hidden = false;
+        portfolioReturn.textContent = '← 返回项目页';
+        portfolioReturn.addEventListener('click', returnToPortfolio);
+        addEventListener('contextmenu', returnToPortfolio);
+      }
+
+      addEventListener('pageshow', event => {
+        if (!event.persisted) return;
+        portfolioLeaving = false;
+      });
+
+      function compile(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+        return shader;
+      }
+
+      function mountLiquidField() {
+        const gl = fieldCanvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+        if (!gl) return;
+        const vertexSource = `
+          attribute vec2 aPosition;
+          varying vec2 vUv;
+          void main(){ vUv = aPosition * .5 + .5; gl_Position = vec4(aPosition, 0., 1.); }
+        `;
+        const fragmentSource = `
+          precision highp float;
+          varying vec2 vUv;
+          uniform vec2 uResolution;
+          uniform vec2 uPointer;
+          uniform float uTime;
+          uniform float uScroll;
+
+          float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+          float noise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(hash21(i),hash21(i+vec2(1.,0.)),f.x),mix(hash21(i+vec2(0.,1.)),hash21(i+vec2(1.)),f.x),f.y); }
+          float fbm(vec2 p){ float v=0.,a=.52; for(int i=0;i<4;i++){ v+=noise(p)*a; p=p*2.03+17.17; a*=.48; } return v; }
+          vec2 vnoise(vec2 p){ return vec2(noise(p),noise(p+vec2(37.2,17.5))); }
+          vec2 liquidDomain(vec2 p,float t){ vec2 q=vnoise(p*1.45+vec2(t*.045,-t*.035)); vec2 r=vnoise(p*3.1+(q-.5)*2.4+vec2(-t*.12,t*.1)); return (mix(q,r,.58)-.5)*2.; }
+          float segment(vec2 uv,vec2 a,vec2 b,float radius,float aspect){ vec2 p=vec2(uv.x*aspect,uv.y); a.x*=aspect; b.x*=aspect; vec2 ab=b-a; float h=clamp(dot(p-a,ab)/max(.0001,dot(ab,ab)),0.,1.); vec2 d=p-(a+ab*h); return exp(-dot(d,d)/max(.0001,radius)); }
+          float blob(vec2 uv,vec2 c,float radius,float aspect){ vec2 d=vec2((uv.x-c.x)*aspect,uv.y-c.y); return exp(-dot(d,d)/max(.001,radius)); }
+
+          void main(){
+            vec2 uv=vUv;
+            float aspect=uResolution.x/max(1.,uResolution.y);
+            vec2 pointer=uPointer-.5;
+            float t=uTime;
+            vec2 flowP=vec2(uv.x*aspect,uv.y);
+            vec2 warp=liquidDomain(flowP+vec2(uScroll*.42,-uScroll*.28),t);
+            vec2 fine=liquidDomain(flowP*1.6+vec2(4.1,2.7),-t*.62);
+            float amp=.032+length(pointer)*.018;
+            vec2 offset=vec2(warp.x/aspect,warp.y)*amp+vec2(fine.x/aspect,fine.y)*.009;
+            vec2 liquidUv=uv+offset;
+            vec2 haloUv=uv+offset*.42;
+            vec2 tip=vec2(.80+pointer.x*.05+sin(t*.11)*.016,.52-pointer.y*.04+cos(t*.09)*.014);
+            vec2 upper=vec2(.46+sin(t*.07)*.018,1.13);
+            vec2 lower=vec2(.34+cos(t*.065)*.02,-.15);
+            float up=segment(liquidUv,upper,tip,.0034,aspect)*.57+segment(haloUv,upper,tip,.022,aspect)*.25;
+            float down=segment(liquidUv,lower,tip,.0042,aspect)*.59+segment(haloUv,lower,tip,.027,aspect)*.27;
+            float upT=smoothstep(0.,1.,fract(t*.046+uScroll*.3));
+            float downT=smoothstep(0.,1.,fract(t*.039+.58+uScroll*.27));
+            up+=blob(liquidUv,mix(upper,tip,upT),.032,aspect)*.17;
+            down+=blob(liquidUv,mix(lower,tip,downT),.038,aspect)*.18;
+            float clock=mod(6.+t*.055+uScroll*2.2+pointer.x*.38,3.);
+            float blend=smoothstep(0.,1.,fract(clock));
+            vec3 a0=vec3(.025,.67,.62),b0=vec3(.08,.30,.95),c0=vec3(.48,.13,.94);
+            vec3 a1=vec3(.95,.56,.12),b1=vec3(.91,.18,.25),c1=vec3(.66,.08,.49);
+            vec3 a2=vec3(.08,.72,.46),b2=vec3(.02,.45,.74),c2=vec3(.23,.15,.76);
+            vec3 ca,cb,cc;
+            if(clock<1.){ca=mix(a0,a1,blend);cb=mix(b0,b1,blend);cc=mix(c0,c1,blend);}else if(clock<2.){ca=mix(a1,a2,blend);cb=mix(b1,b2,blend);cc=mix(c1,c2,blend);}else{ca=mix(a2,a0,blend);cb=mix(b2,b0,blend);cc=mix(c2,c0,blend);}
+            float upperProgress=clamp((liquidUv.x-upper.x)/max(.001,tip.x-upper.x),0.,1.);
+            float lowerProgress=clamp((liquidUv.x-lower.x)/max(.001,tip.x-lower.x),0.,1.);
+            float flowA=fbm(vec2(upperProgress*4.2-t*.17,1.7));
+            float flowB=fbm(vec2(lowerProgress*4.-t*.15,7.3));
+            vec3 upperColor=mix(ca,cb,smoothstep(.03,.97,upperProgress+(flowA-.5)*.15));
+            vec3 lowerColor=mix(cc,cb,smoothstep(.03,.97,lowerProgress+(flowB-.5)*.15));
+            vec3 color=vec3(.0015,.004,.008);
+            float falloff=mix(.025,1.,smoothstep(.15,.68,uv.x));
+            color+=(upperColor*up*(.68+flowA*.48)+lowerColor*down*(.7+flowB*.46)+cb*blob(haloUv,tip,.05,aspect)*.09)*falloff*.58;
+            float vignette=1.-smoothstep(.2,1.1,distance(uv,vec2(.55,.5)));
+            color*=.42+vignette*.72;
+            gl_FragColor=vec4(max(color,0.),1.);
+          }
+        `;
+        const vertex = compile(gl, gl.VERTEX_SHADER, vertexSource);
+        const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource);
+        const program = gl.createProgram();
+        gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+        gl.useProgram(program);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+        const position = gl.getAttribLocation(program, 'aPosition');
+        gl.enableVertexAttribArray(position); gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+        const resolution = gl.getUniformLocation(program, 'uResolution');
+        const pointerUniform = gl.getUniformLocation(program, 'uPointer');
+        const timeUniform = gl.getUniformLocation(program, 'uTime');
+        const scrollUniform = gl.getUniformLocation(program, 'uScroll');
+        const pointer = { x: .67, y: .48 };
+        let width=0,height=0,raf=0,paused=false;
+        function resize(){ const dpr=Math.min(devicePixelRatio||1,innerWidth<720?1.1:1.35); const w=Math.round(innerWidth*dpr),h=Math.round(innerHeight*dpr); if(w===width&&h===height)return; width=w;height=h;fieldCanvas.width=w;fieldCanvas.height=h;gl.viewport(0,0,w,h); }
+        function render(now){ resize(); const maxScroll=Math.max(1,document.documentElement.scrollHeight-innerHeight); const phase=scrollY/maxScroll; gl.uniform2f(resolution,width,height);gl.uniform2f(pointerUniform,pointer.x,pointer.y);gl.uniform1f(timeUniform,reducedMotion?1.2:now*.001);gl.uniform1f(scrollUniform,phase);gl.drawArrays(gl.TRIANGLES,0,6);if(!paused&&!reducedMotion)raf=requestAnimationFrame(render); }
+        addEventListener('pointermove',e=>{ pointer.x+=(e.clientX/innerWidth-pointer.x)*.18; pointer.y+=(1-e.clientY/innerHeight-pointer.y)*.18; },{passive:true});
+        document.addEventListener('visibilitychange',()=>{paused=document.hidden;if(paused)cancelAnimationFrame(raf);else if(!reducedMotion)raf=requestAnimationFrame(render);});
+        render(performance.now());
+      }
+
+      function paintGrain(){
+        const scale=.58;
+        const width=Math.max(320,Math.ceil(innerWidth*scale));
+        const height=Math.max(240,Math.ceil(innerHeight*scale));
+        grainCanvas.width=width;grainCanvas.height=height;
+        const context=grainCanvas.getContext('2d',{alpha:true});
+        const image=context.createImageData(width,height);
+        let seed=608;
+        const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+        for(let i=0;i<image.data.length;i+=4){ const value=Math.max(0,Math.min(46,5+(random()+random()+random()-1.5)*24+(random()>.997?18:0)));image.data[i]=value;image.data[i+1]=value;image.data[i+2]=value;image.data[i+3]=190; }
+        context.putImageData(image,0,0);
+      }
+
+      try { mountLiquidField(); } catch (error) { console.warn('Liquid field fallback active.', error); }
+      paintGrain();
+      let grainResize;
+      addEventListener('resize',()=>{clearTimeout(grainResize);grainResize=setTimeout(paintGrain,180);},{passive:true});
+
+
+      const PROTOTYPE_BUILD = '20260713-8';
+
+      function prototypeFile(frame) {
+        try { return new URL(frame.src, location.href).pathname.split('/').pop(); }
+        catch { return ''; }
+      }
+
+      function prototypeSrc(file, context) {
+        const url = new URL(file, location.href);
+        url.searchParams.set('embed', context);
+        url.searchParams.set('v', PROTOTYPE_BUILD);
+        return url.href;
+      }
+
+      function decoratePrototype(frame, context) {
+        const file = prototypeFile(frame);
+        if (!file || frame.getAttribute('src') === 'about:blank') return;
+        try {
+          const root = frame.contentDocument?.documentElement;
+          if (!root) return;
+          root.dataset.embedContext = context;
+          root.dataset.embedTheme = 'native';
+          if (fromPortfolio && root.dataset.portfolioReturnBound !== 'true') {
+            root.dataset.portfolioReturnBound = 'true';
+            frame.contentWindow.addEventListener('contextmenu', returnToPortfolio);
+          }
+        } catch (error) {
+          console.warn('Prototype embed context unavailable.', error);
+        }
+      }
+
+      const proofFrame = document.getElementById('proof-frame');
+      const proofScreen = document.getElementById('proof-screen');
+      const proofPath = document.getElementById('proof-path');
+      const proofSteps = [...document.querySelectorAll('.proof-step')];
+      let activePreview = proofSteps[0];
+
+      function setPreview(step) {
+        if (!step) return;
+        activePreview = step;
+        proofSteps.forEach(item => {
+          const active = item === step;
+          item.classList.toggle('is-active', active);
+          item.setAttribute('aria-pressed', String(active));
+        });
+        const stepIndex = proofSteps.indexOf(step);
+        const file = step.dataset.proofFile;
+        proofPath.textContent = `功能演示 ${String(stepIndex + 1).padStart(2, '0')} / 08 · ${step.dataset.title}`;
+        proofFrame.title = step.dataset.title + ' · NextStep 功能演示';
+        if (prototypeFile(proofFrame) !== file) {
+          proofScreen.classList.add('is-loading');
+          proofFrame.src = prototypeSrc(file, 'proof');
+        } else {
+          decoratePrototype(proofFrame, 'proof');
+        }
+      }
+
+      proofFrame.addEventListener('load', () => {
+        decoratePrototype(proofFrame, 'proof');
+        proofScreen.classList.remove('is-loading');
+        setPreview(activePreview);
+      });
+      setPreview(activePreview);
+      proofSteps.forEach(step => step.addEventListener('click', () => setPreview(step)));
+      const demos = [
+        { file: 'demo-scan.html', title: '全局资产扫描', tag: '可操作原型' },
+        { file: 'demo-sync.html', title: '双向同步', tag: '可操作原型' },
+        { file: 'demo-edit.html', title: '嵌套画布', tag: '可操作原型' },
+        { file: 'demo-live-edit.html', title: '实时编辑', tag: '可操作原型' },
+        { file: 'demo-annotate.html', title: '画布批注', tag: '可操作原型' },
+        { file: 'demo-agent.html', title: 'Agent 协作', tag: '可操作原型' },
+        { file: 'demo-collapse.html', title: '抽屉收归', tag: '可操作原型' },
+        { file: 'demo-template.html', title: '流程复用', tag: '可操作原型' }
+      ];
+      const modal = document.getElementById('demo-modal');
+      const modalFrame = document.getElementById('modal-frame');
+      const modalTitle = document.getElementById('modal-title');
+      const modalTag = document.getElementById('modal-tag');
+      const modalDirect = document.getElementById('modal-direct');
+      const modalClose = document.querySelector('[data-modal-close]');
+      const modalFocusableSelector = 'a[href], button:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
+      let activeDemo = 0;
+      let modalReturnFocus = null;
+
+      function modalFocusables() {
+        return [...modal.querySelectorAll(modalFocusableSelector)]
+          .filter(element => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true');
+      }
+
+      function showDemo(index) {
+        activeDemo = (index + demos.length) % demos.length;
+        const demo = demos[activeDemo];
+        const src = prototypeSrc(demo.file, 'modal');
+        modalTitle.textContent = demo.title;
+        modalTag.textContent = demo.tag;
+        modalDirect.href = prototypeSrc(demo.file, 'standalone');
+        modalFrame.title = demo.title + ' 交互原型';
+        modalFrame.src = src;
+      }
+
+      function openDemo(index, trigger) {
+        modalReturnFocus = trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+        modal.hidden = false;
+        document.body.classList.add('modal-open');
+        showDemo(index);
+        requestAnimationFrame(() => modalClose.focus());
+      }
+
+      function closeDemo() {
+        if (modal.hidden) return;
+        const returnFocus = modalReturnFocus;
+        modal.hidden = true;
+        document.body.classList.remove('modal-open');
+        modalFrame.src = 'about:blank';
+        modalReturnFocus = null;
+        if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
+      }
+
+      function trapModalTab(event) {
+        const focusables = modalFocusables();
+        if (!focusables.length) {
+          event.preventDefault();
+          modalClose.focus();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (event.shiftKey && (active === first || !modal.contains(active))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      modalFrame.addEventListener('load', () => decoratePrototype(modalFrame, 'modal'));
+      document.querySelectorAll('[data-demo]').forEach(button => {
+        button.addEventListener('click', () => openDemo(Number(button.dataset.demo), button));
+      });
+      modalClose.addEventListener('click', closeDemo);
+      document.querySelector('[data-modal-prev]').addEventListener('click', () => showDemo(activeDemo - 1));
+      document.querySelector('[data-modal-next]').addEventListener('click', () => showDemo(activeDemo + 1));
+      modal.addEventListener('pointerdown', event => { if (event.target === modal) closeDemo(); });
+      addEventListener('keydown', event => {
+        if (modal.hidden) {
+          const editable = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target?.isContentEditable;
+          if (fromPortfolio && !editable && (event.key === 'Escape' || event.key === 'Backspace')) returnToPortfolio(event);
+          return;
+        }
+        if (event.key === 'Tab') {
+          trapModalTab(event);
+          return;
+        }
+        if (event.key === 'Escape') closeDemo();
+        if (event.key === 'ArrowLeft') showDemo(activeDemo - 1);
+        if (event.key === 'ArrowRight') showDemo(activeDemo + 1);
+      });
+      addEventListener('focusin', event => {
+        if (!modal.hidden && !modal.contains(event.target)) {
+          event.preventDefault();
+          modalClose.focus();
+        }
+      });
+      if(window.gsap&&window.ScrollTrigger&&!reducedMotion){
+        const {gsap,ScrollTrigger}=window;gsap.registerPlugin(ScrollTrigger);document.body.classList.add('motion-ready');
+        const intro=gsap.timeline({defaults:{ease:'power3.out'}});
+        intro.from('.topbar>*',{y:-14,opacity:0,duration:.6,stagger:.08}).from('.hero-kicker',{y:12,opacity:0,duration:.5},.14).from('.brand span',{x:-28,opacity:0,filter:'blur(10px)',duration:.9},.2).from('.brand strong',{x:28,opacity:0,filter:'blur(10px)',duration:.9},.24).from('.brand-sub',{y:16,opacity:0,letterSpacing:'1em',duration:.8},.42).from('.hero-line,.hero-desc,.status-line,.hero-actions,.hero-note',{y:18,opacity:0,duration:.65,stagger:.07},.52);
+        document.querySelectorAll('[data-reveal]').forEach(element=>gsap.from(element,{y:26,opacity:0,duration:.72,ease:'power2.out',scrollTrigger:{trigger:element,start:'top 86%',toggleActions:'play none none reverse'}}));
+        gsap.to('.hero-inner',{yPercent:-16,opacity:.12,filter:'blur(8px)',ease:'none',scrollTrigger:{trigger:'.hero',start:'top top',end:'bottom top',scrub:.8}});
+        addEventListener('load',()=>ScrollTrigger.refresh(),{once:true});
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,630 +1,420 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>实时编辑 · 画布同步 — LIVE EDIT</title>
-<!-- 共享设计语言：像素字体 + 配色变量 -->
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
-:root {
-  --bg: #f0ebe0; --bg-canvas: #e8e2d4; --bg-panel: #faf7f0;
-  --bg-card: #ffffff; --bg-card-hi: #f5f1e8;
-  --primary: #4a7c9e; --primary-dim: #6b9bb8; --primary-bg: #e3edf3;
-  --success: #5b8c5a; --success-bg: #e8f0e8;
-  --warning: #c4944a; --warning-bg: #f5edd9;
-  --asset: #8b6fb0; --asset-bg: #ede8f5;
-  --text: #3d3d3d; --text-dim: #8a8a8a; --text-hi: #1a1a1a;
-  --border: #c9c2b0; --border-hi: #a89e85; --shadow: #d4cdb9;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
-body {
-  font-family: 'VT323', monospace;
-  background: var(--bg); color: var(--text); font-size: 18px;
-  user-select: none; -webkit-user-select: none;
-}
-
-/* ===== 顶部标题栏 ===== */
-.topbar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 60px;
-  background: var(--bg-panel); border-bottom: 2px solid var(--border);
-  display: flex; align-items: center; gap: 14px; padding: 0 20px;
-}
-.brand { display: flex; flex-direction: column; gap: 3px; }
-.brand .title { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--text-hi); letter-spacing: 0.5px; }
-.brand .desc { font-size: 17px; color: var(--text-dim); }
-.topbar .spacer { flex: 1; }
-.topbar .pill {
-  font-family: 'Press Start 2P', monospace; font-size: 9px;
-  padding: 7px 11px; border: 2px solid var(--warning); background: var(--warning-bg); color: var(--warning);
-  display: flex; align-items: center; gap: 8px;
-}
-.topbar .pill .dot { width: 8px; height: 8px; background: var(--warning); animation: blink 1.2s steps(2) infinite; }
-@keyframes blink { 50% { opacity: 0.25; } }
-
-/* ===== 主体分屏 ===== */
-.main { position: fixed; top: 60px; left: 0; right: 0; bottom: 0; display: flex; }
-
-/* ===== 左侧 Agent 对话 ===== */
-.chat {
-  width: 38%; min-width: 320px; max-width: 460px;
-  background: var(--bg-panel); border-right: 2px solid var(--border);
-  display: flex; flex-direction: column;
-}
-.chat-head {
-  padding: 12px 16px; border-bottom: 2px solid var(--border);
-  display: flex; align-items: center; gap: 10px;
-}
-.chat-head .avatar {
-  width: 34px; height: 34px; background: var(--asset); border: 2px solid var(--border-hi);
-  box-shadow: 3px 3px 0 0 var(--shadow);
-  display: flex; align-items: center; justify-content: center;
-  font-family: 'Press Start 2P', monospace; font-size: 10px; color: #fff;
-}
-.chat-head .meta { display: flex; flex-direction: column; gap: 2px; }
-.chat-head .name { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--text-hi); }
-.chat-head .sub { font-size: 15px; color: var(--text-dim); }
-
-.messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.messages::-webkit-scrollbar { width: 8px; }
-.messages::-webkit-scrollbar-thumb { background: var(--border); }
-
-.msg { display: flex; gap: 8px; max-width: 92%; animation: msgIn 0.2s steps(4); }
-@keyframes msgIn { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
-.msg.agent { align-self: flex-start; }
-.msg.user { align-self: flex-end; flex-direction: row-reverse; }
-.msg .bubble {
-  padding: 9px 12px; border: 2px solid var(--border); background: var(--bg-card);
-  box-shadow: 3px 3px 0 0 var(--shadow); font-size: 17px; line-height: 1.4; color: var(--text);
-  word-break: break-word; white-space: pre-wrap;
-}
-.msg.agent .bubble { border-color: var(--asset); background: var(--asset-bg); }
-.msg.user .bubble { border-color: var(--primary); background: var(--primary-bg); }
-.msg .bubble .who { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--text-dim); margin-bottom: 5px; }
-/* agent 正在写入的消息：带"写入 ch01.md"标识 + 打字光标 */
-.msg.writing .bubble { border-color: var(--warning); background: var(--warning-bg); }
-.msg.writing .bubble .tag {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--warning);
-  margin-bottom: 6px;
-}
-.msg.writing .bubble .tag::before { content: '\270E'; font-family: monospace; font-size: 11px; }
-/* 打字光标 */
-.caret {
-  display: inline-block; width: 8px; height: 16px; background: var(--warning);
-  vertical-align: text-bottom; margin-left: 2px; animation: caret-blink 0.7s steps(2) infinite;
-}
-@keyframes caret-blink { 50% { opacity: 0; } }
-
-/* agent 思考中三点 */
-.thinking { display: flex; gap: 8px; align-self: flex-start; }
-.thinking .bubble { padding: 12px 14px; border: 2px solid var(--asset); background: var(--asset-bg); box-shadow: 3px 3px 0 0 var(--shadow); display: flex; gap: 5px; }
-.thinking .dot { width: 7px; height: 7px; background: var(--asset); animation: typing 1s steps(4) infinite; }
-.thinking .dot:nth-child(2) { animation-delay: 0.15s; }
-.thinking .dot:nth-child(3) { animation-delay: 0.3s; }
-@keyframes typing { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-
-.composer { border-top: 2px solid var(--border); padding: 10px 12px; display: flex; gap: 8px; }
-.composer input {
-  flex: 1; padding: 9px 10px; border: 2px solid var(--border); background: var(--bg-card);
-  font-family: 'VT323', monospace; font-size: 17px; color: var(--text); outline: none;
-}
-.composer input:focus { border-color: var(--primary); }
-.composer .send {
-  padding: 0 14px; border: 2px solid var(--primary); background: var(--primary-bg);
-  font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--primary); cursor: pointer;
-}
-.composer .send:hover { background: #d6e6ef; }
-.composer .write-btn {
-  width: 100%; margin-top: 8px; padding: 11px 14px;
-  border: 2px solid var(--warning); background: var(--warning); color: #fff;
-  font-family: 'Press Start 2P', monospace; font-size: 9px; cursor: pointer;
-  box-shadow: 3px 3px 0 0 var(--shadow); transition: transform 0.1s;
-}
-.composer .write-btn:hover { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--shadow); }
-.composer .write-btn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 0 var(--shadow); }
-.composer .write-btn:disabled { background: var(--bg-card-hi); color: var(--text-dim); border-color: var(--border); cursor: not-allowed; box-shadow: none; transform: none; }
-.composer-hint { font-size: 14px; color: var(--text-dim); padding: 0 12px 10px; line-height: 1.3; }
-
-/* ===== 右侧画布 ===== */
-.canvas-wrap { flex: 1; position: relative; background: var(--bg-canvas); }
-.canvas-bar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-  padding: 10px 16px; display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(var(--bg-panel), rgba(250,247,240,0.6));
-  border-bottom: 1px dashed var(--border);
-}
-.canvas-bar .ctitle { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--text-hi); }
-.canvas-bar .ccount { font-size: 15px; color: var(--text-dim); }
-.canvas-bar .spacer { flex: 1; }
-.zoom-mini { display: flex; gap: 4px; }
-.zoom-mini button {
-  width: 28px; height: 26px; border: 2px solid var(--border); background: var(--bg-card);
-  font-family: 'Press Start 2P', monospace; font-size: 9px; cursor: pointer; color: var(--text);
-}
-.zoom-mini button:hover { background: var(--bg-card-hi); }
-
-.viewport { position: absolute; top: 50px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; }
-.viewport.panning { cursor: grabbing; }
-.world {
-  position: absolute; top: 0; left: 0; width: 3000px; height: 2200px; transform-origin: 0 0;
-  background-color: var(--bg-canvas);
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px),
-    linear-gradient(rgba(201,194,176,0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(201,194,176,0.35) 1px, transparent 1px);
-  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
-}
-
-/* ===== 文件节点 ===== */
-.file-node {
-  position: absolute; width: 360px; background: var(--bg-card);
-  border: 2px solid var(--border-hi); box-shadow: 5px 5px 0 0 var(--shadow);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-/* 编辑中：边框变橙、加发光脉冲 */
-.file-node.editing { border-color: var(--warning); animation: node-editing 1.1s steps(8) infinite; }
-@keyframes node-editing {
-  0%,100% { box-shadow: 5px 5px 0 0 var(--shadow), 0 0 0 0 rgba(196,148,74,0); }
-  50% { box-shadow: 5px 5px 0 0 var(--shadow), 0 0 0 4px rgba(196,148,74,0.25); }
-}
-/* 同步完成：整体闪一下绿 */
-.file-node.synced-flash { animation: node-synced 1.1s steps(8); }
-@keyframes node-synced {
-  0%,100% { border-color: var(--border-hi); box-shadow: 5px 5px 0 0 var(--shadow); }
-  30% { border-color: var(--success); box-shadow: 5px 5px 0 0 var(--success), 0 0 0 3px var(--success-bg); }
-}
-
-.node-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-bottom: 2px solid var(--border); background: var(--bg-card-hi);
-}
-.node-bar .file-ico {
-  font-family: 'Press Start 2P', monospace; font-size: 9px; color: #fff; background: var(--primary);
-  padding: 3px 5px;
-}
-.node-bar .file-name { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--text-hi); flex: 1; }
-
-/* 顶部状态指示器 */
-.status-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: 'Press Start 2P', monospace; font-size: 7px;
-  padding: 4px 7px; border: 1px solid var(--border-hi); background: var(--bg-card); color: var(--text-dim);
-}
-.status-pill .sdot { width: 7px; height: 7px; background: var(--text-dim); }
-.status-pill.editing { color: var(--warning); border-color: var(--warning); background: var(--warning-bg); }
-.status-pill.editing .sdot { background: var(--warning); animation: blink 0.8s steps(2) infinite; }
-.status-pill.synced { color: var(--success); border-color: var(--success); background: var(--success-bg); }
-.status-pill.synced .sdot { background: var(--success); }
-
-/* 节点内容预览 */
-.node-preview {
-  max-height: 280px; overflow-y: auto; padding: 10px 12px;
-  font-size: 18px; line-height: 1.55; color: var(--text); user-select: text; -webkit-user-select: text;
-}
-.node-preview::-webkit-scrollbar { width: 7px; }
-.node-preview::-webkit-scrollbar-thumb { background: var(--border); }
-.preview-line { padding: 1px 4px; margin: 0 -4px; white-space: pre-wrap; word-break: break-word; }
-.preview-line.heading { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--text-hi); margin: 0 0 6px; line-height: 1.4; }
-.preview-line.blank { height: 8px; }
-/* 已确认行（本次新增标记）：淡橙背景，编辑结束后渐隐 */
-.preview-line.committed.just-added { background: var(--warning-bg); box-shadow: inset 3px 0 0 var(--warning); }
-.file-node.edit-done .preview-line.just-added { background: transparent; box-shadow: none; transition: background 0.8s, box-shadow 0.8s; }
-/* 正在写入的行：闪烁高亮 */
-.preview-line.writing { background: #fff3d0; box-shadow: inset 3px 0 0 var(--warning); animation: writing-flash 0.55s steps(2) infinite; }
-@keyframes writing-flash { 50% { background: var(--warning-bg); } }
-
-/* 节点底部状态条 */
-.node-foot {
-  padding: 6px 10px; border-top: 1px dashed var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 14px; color: var(--text-dim);
-}
-.node-foot .live { display: flex; align-items: center; gap: 5px; }
-.node-foot .live .ldot { width: 7px; height: 7px; background: var(--text-dim); }
-.file-node.editing .node-foot .live { color: var(--warning); }
-.file-node.editing .node-foot .ldot { background: var(--warning); animation: blink 0.8s steps(2) infinite; }
-
-/* 从对话指向节点的同步脉冲提示（画布右下角说明） */
-.tip {
-  position: fixed; right: 20px; bottom: 20px; z-index: 90;
-  background: var(--bg-panel); border: 2px solid var(--border); box-shadow: 3px 3px 0 0 var(--shadow);
-  padding: 8px 12px; font-size: 15px; color: var(--text-dim); max-width: 320px; line-height: 1.3;
-}
-.tip b { color: var(--warning); font-weight: normal; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>NextStep｜Agent 逐行编辑</title>
+  <style>
+    :root {
+      --bg: #05090d;
+      --panel: #091119;
+      --surface: #101c26;
+      --ink: #edf5f7;
+      --muted: #8ea0aa;
+      --faint: #5c6d77;
+      --line: rgba(170, 201, 215, .16);
+      --line-strong: rgba(170, 201, 215, .3);
+      --blue: #69b8e8;
+      --blue-soft: rgba(76, 164, 220, .15);
+      --amber: #e4aa5b;
+      --amber-soft: rgba(228, 170, 91, .12);
+      --green: #53cf91;
+      --green-soft: rgba(83, 207, 145, .13);
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); }
+    body { color: var(--ink); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+    button { color: inherit; font: inherit; }
+    button:focus-visible, [tabindex="0"]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .app { display: grid; grid-template-rows: 46px minmax(0, 1fr); width: 100%; height: 100%; background: var(--bg); }
+    .topbar { position: relative; z-index: 30; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); background: rgba(5, 9, 13, .94); }
+    .brand { display: flex; align-items: center; min-width: 0; gap: 10px; }
+    .brand-mark { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid rgba(83, 207, 145, .5); color: var(--green); font: 700 11px/1 var(--mono); }
+    .brand strong { font: 600 12px/1 var(--mono); letter-spacing: .08em; }
+    .brand span { overflow: hidden; color: var(--faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .top-state { display: flex; align-items: center; gap: 7px; color: var(--muted); font: 10px/1 var(--mono); }
+    .top-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+    .top-state[data-phase="writing"] i { background: var(--amber); box-shadow: 0 0 10px rgba(228, 170, 91, .72); animation: pulse 1s ease infinite; }
+    .top-state[data-phase="synced"] i { background: var(--green); box-shadow: 0 0 10px rgba(83, 207, 145, .65); }
+    .workbench { display: grid; grid-template-columns: minmax(250px, 31%) minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .agent { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; border-right: 1px solid var(--line-strong); background: rgba(8, 15, 21, .96); }
+    .agent-head { display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+    .agent-head strong { display: block; font-size: 13px; }
+    .agent-head small { display: block; margin-top: 2px; color: var(--faint); font-size: 10.5px; }
+    .avatar { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(105, 184, 232, .36); color: var(--blue); background: var(--blue-soft); font: 700 10px/1 var(--mono); }
+    .messages { min-height: 0; overflow: auto; padding: 14px; scrollbar-width: thin; scrollbar-color: rgba(132, 160, 173, .28) transparent; }
+    .message { display: none; margin: 0 0 17px; }
+    .message.is-visible { display: block; animation: rise .2s ease both; }
+    .message-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--faint); font: 9px/1 var(--mono); }
+    .message-meta b { color: var(--blue); font-weight: 600; }
+    .message.user .message-meta b { color: var(--amber); }
+    .message.confirm .message-meta b { color: var(--green); }
+    .bubble { padding: 9px 10px; border: 1px solid var(--line); color: #dce7e9; background: rgba(14, 25, 34, .78); font-size: 12px; line-height: 1.6; }
+    .message.user .bubble { border-color: rgba(228, 170, 91, .24); background: rgba(228, 170, 91, .07); }
+    .message.confirm .bubble { border-color: rgba(83, 207, 145, .3); background: rgba(83, 207, 145, .07); }
+    .bubble p { margin: 0; }
+    .bubble code { color: #b8d9e9; font: 10px/1.4 var(--mono); }
+    .trace { display: flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--faint); font-size: 9.5px; }
+    .trace::before { width: 10px; height: 1px; background: var(--blue); content: ""; }
+    .agent-foot { padding: 11px 13px; border-top: 1px solid var(--line); background: rgba(6, 11, 16, .88); }
+    .stage-line { margin-bottom: 8px; color: var(--muted); font-size: 10.5px; }
+    .agent-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
+    .run-button { min-height: 39px; border: 1px solid rgba(83, 207, 145, .55); color: #06130d; background: var(--green); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .run-button.is-running { border-color: rgba(228, 170, 91, .54); color: var(--amber); background: var(--amber-soft); }
+    .quiet-button { min-height: 39px; padding: 0 10px; border: 1px solid var(--line-strong); color: var(--muted); background: transparent; font-size: 11px; cursor: pointer; }
+    .run-button:hover, .quiet-button:hover:not(:disabled) { filter: brightness(1.09); }
+    .quiet-button:disabled { opacity: .38; cursor: default; }
+    .canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #071019; }
+    .canvas-head { position: absolute; z-index: 16; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; min-height: 46px; padding: 0 12px; border-bottom: 1px solid var(--line); background: rgba(7, 16, 25, .9); backdrop-filter: blur(12px); }
+    .file-breadcrumb { display: flex; align-items: center; min-width: 0; gap: 7px; }
+    .file-breadcrumb strong { overflow: hidden; font: 600 11px/1 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .file-breadcrumb span { color: var(--faint); font-size: 10px; }
+    .edit-meta { color: var(--faint); font: 9px/1 var(--mono); }
+    .edit-meta b { color: var(--amber); font-weight: 600; }
+    .viewport { position: absolute; inset: 46px 0 0; overflow: hidden; cursor: grab; touch-action: none; background-color: #071019; background-image: linear-gradient(rgba(126, 165, 183, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 165, 183, .07) 1px, transparent 1px), linear-gradient(rgba(126, 165, 183, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 165, 183, .025) 1px, transparent 1px); background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px; }
+    .viewport.is-panning { cursor: grabbing; }
+    .world { position: absolute; top: 0; left: 0; width: 1180px; height: 720px; transform-origin: 0 0; will-change: transform; }
+    .edges { position: absolute; inset: 0; width: 1180px; height: 720px; overflow: visible; pointer-events: none; }
+    .edge { fill: none; stroke: rgba(105, 184, 232, .35); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .edge.is-active { stroke: var(--amber); stroke-dasharray: 6 5; animation: dash 1.5s linear infinite; }
+    .edge.is-synced { stroke: rgba(83, 207, 145, .62); }
+    .file-node { position: absolute; z-index: 3; left: 90px; top: 70px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 560px; height: 570px; overflow: hidden; border: 1px solid rgba(145, 181, 198, .34); background: rgba(9, 17, 23, .98); box-shadow: 0 22px 58px rgba(0, 0, 0, .38); }
+    .file-node.is-writing { border-color: rgba(228, 170, 91, .58); }
+    .file-node.is-synced { border-color: rgba(83, 207, 145, .55); }
+    .node-head { display: flex; align-items: center; gap: 9px; min-height: 45px; padding: 0 11px; border-bottom: 1px solid var(--line); background: rgba(20, 36, 47, .7); }
+    .node-icon { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid rgba(83, 207, 145, .38); color: var(--green); font: 700 9px/1 var(--mono); }
+    .node-title { flex: 1; min-width: 0; }
+    .node-title strong { display: block; overflow: hidden; font: 600 11px/1.35 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .node-title span { display: block; margin-top: 2px; color: var(--faint); font-size: 9px; }
+    .file-state { padding: 4px 6px; border: 1px solid var(--line); color: var(--muted); font: 8px/1 var(--mono); white-space: nowrap; }
+    .file-node.is-writing .file-state { border-color: rgba(228, 170, 91, .42); color: var(--amber); }
+    .file-node.is-synced .file-state { border-color: rgba(83, 207, 145, .42); color: var(--green); }
+    .editor { min-height: 0; overflow: auto; padding: 12px 0 40px; background: linear-gradient(90deg, rgba(255,255,255,.018) 42px, transparent 42px), rgba(6, 12, 16, .8); scrollbar-width: thin; scrollbar-color: rgba(132, 160, 173, .28) transparent; }
+    .lines { margin: 0; padding: 0; list-style: none; }
+    .line { position: relative; min-height: 25px; padding: 4px 12px 4px 50px; color: #cbd7da; font: 11px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .line::before { position: absolute; top: 4px; left: 0; width: 34px; color: var(--faint); font-size: 9px; text-align: right; content: attr(data-line); }
+    .line.title { color: var(--ink); font-size: 13px; font-weight: 700; }
+    .line.heading { margin-top: 5px; color: var(--ink); font-weight: 700; }
+    .line.new { color: #e5eee9; background: linear-gradient(90deg, rgba(83, 207, 145, .11), transparent 80%); box-shadow: inset 2px 0 0 var(--green); animation: writeLine .24s ease both; }
+    .line.current { color: #f0ddbd; background: linear-gradient(90deg, rgba(228, 170, 91, .14), transparent 82%); box-shadow: inset 2px 0 0 var(--amber); }
+    .file-foot { display: flex; align-items: center; justify-content: space-between; min-height: 35px; padding: 0 11px; border-top: 1px solid var(--line); color: var(--faint); font: 9px/1 var(--mono); background: rgba(10, 18, 24, .94); }
+    .file-foot b { color: var(--green); font-weight: 600; }
+    .revision-node { position: absolute; z-index: 3; left: 760px; top: 230px; width: 285px; min-height: 220px; border: 1px solid rgba(145, 181, 198, .3); background: rgba(13, 24, 33, .97); box-shadow: 0 18px 44px rgba(0, 0, 0, .34); }
+    .revision-node.is-writing { border-color: rgba(228, 170, 91, .48); }
+    .revision-node.is-synced { border-color: rgba(83, 207, 145, .55); }
+    .revision-head { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border-bottom: 1px solid var(--line); background: rgba(20, 36, 47, .68); }
+    .revision-icon { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid rgba(105, 184, 232, .35); color: var(--blue); font: 700 8px/1 var(--mono); }
+    .revision-head strong { flex: 1; font-size: 11px; }
+    .revision-id { color: var(--faint); font: 9px/1 var(--mono); }
+    .revision-body { padding: 11px; }
+    .revision-title { margin: 0; font-size: 12px; font-weight: 650; line-height: 1.5; }
+    .revision-copy { margin: 6px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.55; }
+    .revision-progress { height: 3px; margin-top: 12px; overflow: hidden; background: rgba(170, 201, 215, .1); }
+    .revision-fill { width: 0; height: 100%; background: var(--amber); transition: width .2s ease; }
+    .revision-node.is-synced .revision-fill { background: var(--green); }
+    .revision-facts { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; color: var(--faint); font: 9px/1.45 var(--mono); }
+    .revision-facts li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .revision-facts b { color: #cbd8dc; font-weight: 500; }
+    .revision-node.is-synced .revision-facts li:last-child b { color: var(--green); }
+    .port { position: absolute; z-index: 4; top: 50%; width: 10px; height: 10px; margin-top: -5px; border: 2px solid #08121a; border-radius: 50%; background: #6ea9c7; }
+    .file-node .port { right: -6px; }
+    .revision-node .port { left: -6px; }
+    .controls { position: absolute; z-index: 17; right: 12px; bottom: 12px; display: flex; align-items: center; border: 1px solid var(--line-strong); background: rgba(8, 16, 22, .9); }
+    .control { min-width: 34px; height: 34px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; cursor: pointer; }
+    .control:last-child { border-right: 0; }
+    .control:hover { color: var(--ink); background: rgba(105, 184, 232, .09); }
+    .zoom-label { min-width: 46px; color: var(--faint); font: 9px/1 var(--mono); text-align: center; }
+    .canvas-tip { position: absolute; z-index: 10; left: 12px; bottom: 15px; margin: 0; color: var(--faint); font-size: 9.5px; pointer-events: none; }
+    .live { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+    @keyframes rise { from { opacity: 0; transform: translateY(5px); } }
+    @keyframes pulse { 50% { opacity: .35; } }
+    @keyframes dash { to { stroke-dashoffset: -22; } }
+    @keyframes writeLine { from { opacity: 0; transform: translateX(-5px); } }
+    @media (max-width: 760px) {
+      html, body { overflow: auto; }
+      .app { height: auto; min-height: 1080px; grid-template-rows: 44px auto; }
+      .workbench { grid-template-columns: 1fr; grid-template-rows: 360px 680px; }
+      .agent { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+      .canvas { min-height: 680px; }
+      .brand span, .top-state span { display: none; }
+      .file-breadcrumb span, .canvas-tip { display: none; }
+      .agent-actions { grid-template-columns: minmax(0, 1fr) auto auto; }
+    }
+    @media (max-width: 420px) {
+      .agent-actions { grid-template-columns: minmax(0, 1fr) auto; }
+      #step-button { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+    }
+  </style>
 </head>
 <body>
-
-<!-- 顶部标题栏 -->
-<div class="topbar">
-  <div class="brand">
-    <div class="title">LIVE EDIT</div>
-    <div class="desc">实时编辑 — Agent 写文件时，画布上同步看见它在变</div>
-  </div>
-  <div class="spacer"></div>
-  <div class="pill"><span class="dot"></span>EDITING LIVE</div>
-</div>
-
-<div class="main">
-  <!-- 左侧对话 -->
-  <aside class="chat">
-    <div class="chat-head">
-      <div class="avatar">A</div>
-      <div class="meta">
-        <span class="name">PIXEL AGENT</span>
-        <span class="sub">写作助手 · 正在监听 ch01.md</span>
-      </div>
-    </div>
-    <div class="messages" id="messages"></div>
-    <div class="composer">
-      <input id="quickInput" type="text" placeholder="发消息给 agent，或直接点下方按钮让它写…" />
-      <button class="send" id="quickSend">发送</button>
-      <button class="write-btn" id="writeBtn">让 agent 写一段</button>
-    </div>
-    <div class="composer-hint">提示：画布可拖动平移、滚轮缩放；节点里橙底闪烁的行就是 agent 此刻正在写的内容。</div>
-  </aside>
-
-  <!-- 右侧画布 -->
-  <section class="canvas-wrap">
-    <div class="canvas-bar">
-      <span class="ctitle">CANVAS</span>
-      <span class="ccount" id="zoomLabel">100%</span>
-      <span class="spacer"></span>
-      <div class="zoom-mini">
-        <button id="zoomOut">-</button>
-        <button id="zoomReset">RST</button>
-        <button id="zoomIn">+</button>
-      </div>
-    </div>
-    <div class="viewport" id="viewport">
-      <div class="world" id="world">
-        <!-- 文件节点 ch01.md：位置由 JS 初始化居中 -->
-        <div class="file-node" id="fileNode" style="left:180px; top:120px;">
-          <div class="node-bar">
-            <span class="file-ico">MD</span>
-            <span class="file-name">ch01.md</span>
-            <span class="status-pill synced" id="statusPill"><span class="sdot"></span>SYNCED</span>
-          </div>
-          <div class="node-preview" id="nodePreview"></div>
-          <div class="node-foot">
-            <span class="live"><span class="ldot"></span><span id="footText">已同步</span></span>
-            <span id="lineCount">0 行</span>
+  <main class="app">
+    <header class="topbar"><div class="brand"><span class="brand-mark">N</span><strong>NEXTSTEP</strong><span>Agent 逐行编辑</span></div><div class="top-state" id="top-state" data-phase="ready"><i></i><span id="top-label">编辑器就绪</span></div></header>
+    <section class="workbench" aria-label="Agent 与文件画布">
+      <aside class="agent" aria-label="Agent 对话">
+        <header class="agent-head"><div><strong>编辑 Agent</strong><small>每一行写入都同步修订状态</small></div><span class="avatar">AI</span></header>
+        <div class="messages" id="messages" aria-live="polite">
+          <article class="message user is-visible" id="user-message"><div class="message-meta"><b>我</b><span>刚刚</span></div><div class="bubble"><p>给发布清单补上回滚条件、执行顺序和证据留存。</p></div></article>
+          <article class="message" id="plan-message"><div class="message-meta"><b>Agent</b><span>编辑计划</span></div><div class="bubble"><p>我会在 <code>release-checklist.md</code> 末尾逐行追加，并保持修订 #05 与编辑状态同步。</p><div class="trace">目标：7 行新增内容</div></div></article>
+          <article class="message" id="progress-message"><div class="message-meta"><b>Agent</b><span>正在写入</span></div><div class="bubble"><p id="progress-copy">正在写入第 1 行。</p><div class="trace" id="progress-trace">草稿：0 / 7 行</div></div></article>
+          <article class="message confirm" id="confirm-message"><div class="message-meta"><b>Agent</b><span>修订已同步</span></div><div class="bubble"><p>7 行内容已写入文件节点，并保存为修订 #05。</p><div class="trace">状态：文件与对话一致</div></div></article>
+        </div>
+        <footer class="agent-foot"><div class="stage-line" id="stage-line">等待开始 · 修订 #04</div><div class="agent-actions"><button class="run-button" id="run-button" type="button">开始逐行写入</button><button class="quiet-button" id="step-button" type="button">写一行</button><button class="quiet-button" id="reset-button" type="button">重置</button></div></footer>
+      </aside>
+      <section class="canvas" aria-label="文件编辑画布">
+        <header class="canvas-head"><div class="file-breadcrumb"><strong>release-checklist.md</strong><span>文件节点 → 修订节点</span></div><div class="edit-meta">写入 <b id="line-progress">0 / 7</b></div></header>
+        <div class="viewport" id="viewport">
+          <div class="world" id="world">
+            <svg class="edges" viewBox="0 0 1180 720" aria-hidden="true"><path class="edge" id="edit-edge" d="M650 355 C700 355 710 340 760 340"></path></svg>
+            <article class="file-node" id="file-node"><span class="port"></span><header class="node-head"><span class="node-icon">F</span><span class="node-title"><strong>release-checklist.md</strong><span>docs/release/release-checklist.md</span></span><span class="file-state" id="file-state">准备编辑</span></header><div class="editor" id="editor" tabindex="0" aria-label="文件内容"><ol class="lines" id="file-lines"></ol></div><footer class="file-foot"><span id="file-summary">12 行 · 修订 #04</span><b id="save-state">已保存</b></footer></article>
+            <article class="revision-node" id="revision-node"><span class="port"></span><header class="revision-head"><span class="revision-icon">R</span><strong>修订同步</strong><span class="revision-id" id="revision-id">#04</span></header><div class="revision-body"><h2 class="revision-title" id="revision-title">等待编辑开始</h2><p class="revision-copy" id="revision-copy">新增内容会逐行进入草稿，完成后一次保存。</p><div class="revision-progress"><div class="revision-fill" id="revision-fill"></div></div><ul class="revision-facts"><li><span>来源</span><b>Agent 消息 #01</b></li><li><span>新增</span><b id="revision-lines">0 / 7 行</b></li><li><span>状态</span><b id="revision-state">未开始</b></li></ul></div></article>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="tip">
-  <b>看点：</b>不用翻对话，右边节点就是文件本体 —— agent 每写一句，橙底行实时长出来。
-</div>
-
-<script>
-/* ============================================================
-   实时编辑演示核心逻辑
-   - 左侧对话逐字打字（agent 正在写入）
-   - 右侧文件节点 ch01.md 内容实时同步追加
-   - 编辑中指示器脉冲；写完变「已同步」
-   - 画布可平移、滚轮缩放
-   ============================================================ */
-
-// 小工具
-const $ = (id) => document.getElementById(id);
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-// ---------- 预设剧本：小说第一章「边境集市」 ----------
-// 初始文件内容（节点上先显示这些）
-const INITIAL_LINES = [
-  { type: 'heading', text: '第一章 边境集市' },
-  { type: 'blank' },
-  { type: 'text', text: '晨雾还未散尽，边境集市的摊贩们已经支起了棚子。' },
-  { type: 'text', text: '艾琳裹紧斗篷，混在早起的人群里。' },
-  { type: 'text', text: '她已经两天没吃东西了。' },
-];
-
-// agent 续写剧本，每段包含一句「思考」+ 若干「写入行」
-const SEGMENTS = [
-  {
-    think: '她两天没吃东西了，刚出炉的面包对她诱惑太大。我顺着集市开场往下写。',
-    lines: [
-      '她的目光被一炉刚出炉的麦面包攫住了。',
-      '金黄的面包还冒着热气，摊主正扭头和邻摊讨价还价。',
-      '艾琳屏住呼吸，指尖触到了粗糙温热的面包皮。',
-    ],
-  },
-  {
-    think: '现在把紧张感拉满，让她当场被抓现行。',
-    lines: [
-      '就在她抽身欲走的瞬间，一只粗糙的手攥住了她的手腕。',
-      '"小丫头，"沙哑的声音贴着耳朵响起，"我盯着你很久了。"',
-      '艾琳僵在原地，面包从指缝滑落，滚进泥里。',
-    ],
-  },
-  {
-    think: '给她一个硬气的反击，埋下后续交锋的伏笔。',
-    lines: [
-      '她猛地抬眼，对上一双浑浊却精明的眼睛。',
-      '摊主是个瘸腿的老兵，腰间别着一把缺了口的短刀。',
-      '"放手，"艾琳压低声音，"否则让你更瘸。"',
-    ],
-  },
-];
-
-// ---------- DOM ----------
-const messagesEl = $('messages');
-const writeBtn = $('writeBtn');
-const quickInput = $('quickInput');
-const quickSend = $('quickSend');
-const nodePreview = $('nodePreview');
-const statusPill = $('statusPill');
-const fileNode = $('fileNode');
-const footText = $('footText');
-const lineCount = $('lineCount');
-
-// ---------- 状态 ----------
-let segIndex = 0;       // 下一段续写的索引
-let isEditing = false;  // 是否正在编辑（加锁，避免重复触发）
-
-// ---------- 初始化对话 ----------
-function addMessage(role, text, opts = {}) {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + role + (opts.writing ? ' writing' : '');
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  if (opts.writing) {
-    bubble.innerHTML = '<span class="tag">写入 ch01.md</span>';
-  }
-  const span = document.createElement('span');
-  span.className = 'text';
-  span.textContent = text;
-  bubble.appendChild(span);
-  if (opts.caret) {
-    const c = document.createElement('span');
-    c.className = 'caret';
-    bubble.appendChild(c);
-  }
-  wrap.appendChild(bubble);
-  messagesEl.appendChild(wrap);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return { wrap, span, bubble };
-}
-
-// 显示 agent 思考三点
-function showThinking() {
-  const wrap = document.createElement('div');
-  wrap.className = 'thinking';
-  wrap.innerHTML = '<div class="bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
-  messagesEl.appendChild(wrap);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return wrap;
-}
-
-// ---------- 初始化节点内容 ----------
-function renderInitialNode() {
-  nodePreview.innerHTML = '';
-  INITIAL_LINES.forEach((l) => appendPreviewLine(l.type, l.text, { committed: true }));
-  updateLineCount();
-}
-// 往节点追加一行；type: heading / blank / text
-function appendPreviewLine(type, text = '', opts = {}) {
-  const line = document.createElement('div');
-  line.className = 'preview-line';
-  if (type === 'heading') line.classList.add('heading');
-  if (type === 'blank') { line.classList.add('blank'); }
-  line.textContent = text;
-  if (opts.committed) line.classList.add('committed');
-  if (opts.justAdded) line.classList.add('just-added');
-  if (opts.writing) line.classList.add('writing');
-  nodePreview.appendChild(line);
-  nodePreview.scrollTop = nodePreview.scrollHeight;
-  return line;
-}
-function updateLineCount() {
-  const n = nodePreview.querySelectorAll('.preview-line:not(.blank)').length;
-  lineCount.textContent = n + ' 行';
-}
-
-// ---------- 状态指示器 ----------
-function setStatus(state) {
-  fileNode.classList.remove('edit-done');
-  if (state === 'editing') {
-    fileNode.classList.add('editing');
-    fileNode.classList.remove('synced-flash');
-    statusPill.className = 'status-pill editing';
-    statusPill.innerHTML = '<span class="sdot"></span>EDITING';
-    footText.textContent = '编辑中…';
-  } else {
-    fileNode.classList.remove('editing');
-    fileNode.classList.add('synced-flash');
-    statusPill.className = 'status-pill synced';
-    statusPill.innerHTML = '<span class="sdot"></span>SYNCED';
-    footText.textContent = '已同步';
-    // 编辑结束：本次新增行的淡橙背景渐隐
-    setTimeout(() => fileNode.classList.add('edit-done'), 50);
-  }
-}
-
-// ---------- 核心：让 agent 逐字写入一段 ----------
-async function runSegment(segment) {
-  if (isEditing) return;
-  isEditing = true;
-  writeBtn.disabled = true;
-
-  // 清除上一次新增行的 just-added 标记，保证本次只有新写的行带高亮
-  nodePreview.querySelectorAll('.preview-line.just-added').forEach((el) => el.classList.remove('just-added'));
-
-  // 1. agent 先「思考」
-  setStatus('editing');
-  const think = showThinking();
-  await sleep(700);
-  think.remove();
-  addMessage('agent', segment.think);
-
-  await sleep(350);
-
-  // 2. agent 开始写入：对话窗口逐字显示，同时节点同步
-  //    创建对话里的写入消息（带打字光标）
-  const msg = addMessage('agent', '', { writing: true, caret: true });
-
-  for (const line of segment.lines) {
-    // 在节点里新建一个「正在写入」行，内容逐字增长
-    const writingLine = appendPreviewLine('text', '', { writing: true });
-    await typeLine(line, (ch) => {
-      msg.span.textContent += ch;          // 对话窗口同步逐字
-      writingLine.textContent += ch;       // 节点同步逐字
-      nodePreview.scrollTop = nodePreview.scrollHeight;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
-    // 本句写完：固化为已确认行（带本次新增标记），对话换行
-    writingLine.classList.remove('writing');
-    writingLine.classList.add('committed', 'just-added');
-    msg.span.textContent += '\n';
-    updateLineCount();
-    await sleep(260);
-  }
-
-  // 移除打字光标
-  const caret = msg.bubble.querySelector('.caret');
-  if (caret) caret.remove();
-  msg.wrap.classList.remove('writing');
-
-  // 3. 写完：状态变「已同步」
-  setStatus('synced');
-  segIndex++;
-  refreshWriteBtn();
-  isEditing = false;
-}
-
-// 逐字打字：把一句话逐字喂给回调
-async function typeLine(text, onChar) {
-  for (const ch of text) {
-    onChar(ch);
-    // 中文略慢，标点更快，营造书写节奏
-    const delay = /[，。！？、；：""''…]/.test(ch) ? 120 : 42;
-    await sleep(delay);
-  }
-}
-
-// ---------- 触发入口 ----------
-async function triggerNext(userText) {
-  if (isEditing) return;
-  if (userText && userText.trim()) {
-    addMessage('user', userText.trim());
-    await sleep(300);
-  }
-  if (segIndex >= SEGMENTS.length) {
-    // 预设段落用完：agent 友好提示
-    addMessage('agent', '这一章我手头的预设续写就到这儿了。你可以继续描述想要的情节，我接着写。');
-    return;
-  }
-  await runSegment(SEGMENTS[segIndex]);
-}
-
-// 按钮文案随进度变化
-function refreshWriteBtn() {
-  if (segIndex >= SEGMENTS.length) {
-    writeBtn.textContent = '本章预设已写完';
-    writeBtn.disabled = true;
-  } else {
-    const labels = ['让 agent 写一段 · 接近面包', '让 agent 写一段 · 被发现', '让 agent 写一段 · 对峙'];
-    writeBtn.textContent = labels[segIndex] || '让 agent 写一段';
-    writeBtn.disabled = false;
-  }
-}
-
-writeBtn.addEventListener('click', () => triggerNext(''));
-quickSend.addEventListener('click', () => {
-  const t = quickInput.value;
-  if (!t.trim() || isEditing) return;
-  quickInput.value = '';
-  triggerNext(t);
-});
-quickInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') quickSend.click();
-});
-
-// ---------- 启动 ----------
-renderInitialNode();
-addMessage('agent', '我是你的写作 agent。右边画布上就是第一章「边境集市」的开头。');
-addMessage('agent', '需要我续写偷面包那场戏吗？点「让 agent 写一段」，或直接发消息给我。');
-refreshWriteBtn();
-
-/* ============================================================
-   画布平移 + 滚轮缩放（以鼠标位置为中心）
-   ============================================================ */
-const viewport = $('viewport');
-const world = $('world');
-let view = { x: 0, y: 0, scale: 1 };
-const ZOOM_MIN = 0.4, ZOOM_MAX = 2.5;
-
-function applyTransform() {
-  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
-  $('zoomLabel').textContent = Math.round(view.scale * 100) + '%';
-}
-// 初始把节点放到视口左上偏移位置，并轻微居中
-function centerView() {
-  const rect = viewport.getBoundingClientRect();
-  view.x = Math.max(40, rect.width * 0.12);
-  view.y = Math.max(30, rect.height * 0.1);
-  view.scale = 1;
-  applyTransform();
-}
-centerView();
-window.addEventListener('resize', () => applyTransform());
-
-// 拖拽平移
-let panning = false, lastX = 0, lastY = 0;
-viewport.addEventListener('mousedown', (e) => {
-  // 在节点内容区滚动/选文时，不触发画布拖拽
-  if (e.target.closest('.node-preview')) return;
-  panning = true; lastX = e.clientX; lastY = e.clientY;
-  viewport.classList.add('panning');
-});
-window.addEventListener('mousemove', (e) => {
-  if (!panning) return;
-  view.x += e.clientX - lastX;
-  view.y += e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
-  applyTransform();
-});
-window.addEventListener('mouseup', () => { panning = false; viewport.classList.remove('panning'); });
-
-// 滚轮缩放（以鼠标为中心）——先在节点内容区阻止冒泡，让内容自己滚动
-nodePreview.addEventListener('wheel', (e) => e.stopPropagation());
-viewport.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-  let ns = view.scale * factor;
-  ns = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, ns));
-  // 保持鼠标指向的世界坐标不变
-  const wx = (mx - view.x) / view.scale;
-  const wy = (my - view.y) / view.scale;
-  view.scale = ns;
-  view.x = mx - wx * ns;
-  view.y = my - wy * ns;
-  applyTransform();
-}, { passive: false });
-
-// 缩放按钮
-function zoomBy(factor) {
-  const rect = viewport.getBoundingClientRect();
-  const mx = rect.width / 2, my = rect.height / 2;
-  const wx = (mx - view.x) / view.scale;
-  const wy = (my - view.y) / view.scale;
-  let ns = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.scale * factor));
-  view.scale = ns; view.x = mx - wx * ns; view.y = my - wy * ns;
-  applyTransform();
-}
-$('zoomIn').addEventListener('click', () => zoomBy(1.2));
-$('zoomOut').addEventListener('click', () => zoomBy(1 / 1.2));
-$('zoomReset').addEventListener('click', () => { view = { x: 0, y: 0, scale: 1 }; centerView(); });
-</script>
+        <div class="controls" aria-label="画布控制"><button class="control" id="zoom-out" type="button" aria-label="缩小">−</button><span class="zoom-label" id="zoom-label">100%</span><button class="control" id="zoom-in" type="button" aria-label="放大">＋</button><button class="control" id="fit-view" type="button" aria-label="适应画布">⌂</button></div>
+        <p class="canvas-tip">逐行写入时，文件状态与修订草稿同时更新</p>
+        <p class="live" id="live" role="status" aria-live="polite"></p>
+      </section>
+    </section>
+  </main>
+  <script>
+    (function () {
+      'use strict';
+      var baseline = [
+        { text: '# 灰度发布清单', type: 'title' },
+        { text: '版本：rc.4 · 负责人：王乾 / 素罗', type: '' },
+        { text: '状态：准备评审', type: '' },
+        { text: '', type: '' },
+        { text: '## 发布前确认', type: 'heading' },
+        { text: '- 接口契约与模拟响应已经冻结', type: '' },
+        { text: '- 核心路径测试通过', type: '' },
+        { text: '- 390px 与 768px 回归通过', type: '' },
+        { text: '', type: '' },
+        { text: '## 观察窗口', type: 'heading' },
+        { text: '- 首轮灰度观察 20 分钟', type: '' },
+        { text: '- 负责人保持在线', type: '' }
+      ];
+      var incoming = [
+        { text: '', type: '' },
+        { text: '## 回滚与留证', type: 'heading' },
+        { text: '- 错误率连续 5 分钟高于 2% 时回滚', type: '' },
+        { text: '- 冻结灰度流量并切回稳定版本', type: '' },
+        { text: '- 由当班负责人确认恢复结果', type: '' },
+        { text: '- 记录触发指标、执行人和恢复时间', type: '' },
+        { text: '- 将证据链接写回发布任务节点', type: '' }
+      ];
+      var state = { phase: 'ready', index: 0, charIndex: 0, started: false };
+      var view = { x: 0, y: 0, scale: 1 };
+      var timer = 0;
+      var token = 0;
+      var gesture = null;
+      var viewport = document.getElementById('viewport');
+      var world = document.getElementById('world');
+      var editor = document.getElementById('editor');
+      var fileLines = document.getElementById('file-lines');
+      var fileNode = document.getElementById('file-node');
+      var revisionNode = document.getElementById('revision-node');
+      var runButton = document.getElementById('run-button');
+      var stepButton = document.getElementById('step-button');
+      var messages = document.getElementById('messages');
+      var topState = document.getElementById('top-state');
+      var zoomLabel = document.getElementById('zoom-label');
+      var live = document.getElementById('live');
+      function announce(message) { live.textContent = ''; requestAnimationFrame(function () { live.textContent = message; }); }
+      function renderLines() {
+        fileLines.textContent = '';
+        var showCurrent = state.started && state.index < incoming.length && (state.phase === 'writing' || state.charIndex > 0);
+        var all = baseline.concat(incoming.slice(0, state.index));
+        if (showCurrent) all.push({ text: incoming[state.index].text.slice(0, state.charIndex), type: incoming[state.index].type });
+        all.forEach(function (line, index) {
+          var item = document.createElement('li');
+          var isNew = index >= baseline.length;
+          var isCurrent = isNew && showCurrent && index === all.length - 1;
+          item.className = 'line' + (line.type ? ' ' + line.type : '') + (isNew ? ' new' : '') + (isCurrent ? ' current' : '');
+          item.dataset.line = String(index + 1).padStart(2, '0');
+          item.textContent = line.text || ' ';
+          fileLines.appendChild(item);
+        });
+        requestAnimationFrame(function () { editor.scrollTop = editor.scrollHeight; });
+      }
+      function renderMessages() {
+        document.getElementById('plan-message').classList.toggle('is-visible', state.started);
+        document.getElementById('progress-message').classList.toggle('is-visible', state.started && state.phase !== 'synced');
+        document.getElementById('confirm-message').classList.toggle('is-visible', state.phase === 'synced');
+        var currentLength = state.index < incoming.length ? incoming[state.index].text.length : 0;
+        document.getElementById('progress-copy').textContent = state.phase === 'paused' ? '写入已暂停，可继续或单步推进。' : '正在逐字写入第 ' + Math.min(state.index + 1, incoming.length) + ' 行。';
+        document.getElementById('progress-trace').textContent = '草稿：' + state.index + ' / ' + incoming.length + ' 行 · 当前 ' + state.charIndex + '/' + currentLength + ' 字';
+        messages.scrollTop = messages.scrollHeight;
+      }
+      function render() {
+        var currentLength = state.index < incoming.length ? Math.max(1, incoming[state.index].text.length) : 1;
+        var percent = Math.round((state.index + state.charIndex / currentLength) / incoming.length * 100);
+        var writing = state.phase === 'writing';
+        var synced = state.phase === 'synced';
+        topState.dataset.phase = state.phase;
+        fileNode.classList.toggle('is-writing', writing || state.phase === 'paused');
+        fileNode.classList.toggle('is-synced', synced);
+        revisionNode.classList.toggle('is-writing', writing || state.phase === 'paused');
+        revisionNode.classList.toggle('is-synced', synced);
+        document.getElementById('edit-edge').setAttribute('class', 'edge' + (writing || state.phase === 'paused' ? ' is-active' : '') + (synced ? ' is-synced' : ''));
+        document.getElementById('line-progress').textContent = state.index + ' / ' + incoming.length + (writing ? ' · 第 ' + Math.min(state.index + 1, incoming.length) + ' 行' : '');
+        document.getElementById('revision-lines').textContent = state.index + ' / ' + incoming.length + ' 行';
+        document.getElementById('revision-fill').style.width = percent + '%';
+        document.getElementById('revision-id').textContent = state.started ? '#05' : '#04';
+        document.getElementById('file-summary').textContent = (baseline.length + state.index + (state.charIndex > 0 ? 1 : 0)) + ' 行 · 修订 ' + (state.started ? '#05' : '#04');
+        if (state.phase === 'ready') {
+          document.getElementById('top-label').textContent = '编辑器就绪';
+          document.getElementById('file-state').textContent = '准备编辑';
+          document.getElementById('save-state').textContent = '已保存';
+          document.getElementById('revision-title').textContent = '等待编辑开始';
+          document.getElementById('revision-copy').textContent = '新增内容会逐行进入草稿，完成后一次保存。';
+          document.getElementById('revision-state').textContent = '未开始';
+          document.getElementById('stage-line').textContent = '等待开始 · 修订 #04';
+          runButton.textContent = '开始逐行写入';
+        } else if (writing) {
+          document.getElementById('top-label').textContent = '正在逐字编辑';
+          document.getElementById('file-state').textContent = '编辑中 · 第 ' + Math.min(state.index + 1, incoming.length) + ' 行';
+          document.getElementById('save-state').textContent = '未保存';
+          document.getElementById('revision-title').textContent = '修订 #05 正在形成';
+          document.getElementById('revision-copy').textContent = '当前已完成 ' + state.index + ' 行，第 ' + Math.min(state.index + 1, incoming.length) + ' 行正在逐字形成。';
+          document.getElementById('revision-state').textContent = '编辑中';
+          document.getElementById('stage-line').textContent = '正在编辑 · 草稿 ' + state.index + '/' + incoming.length + ' 行';
+          runButton.textContent = '暂停写入';
+        } else if (state.phase === 'paused') {
+          document.getElementById('top-label').textContent = '编辑已暂停';
+          document.getElementById('file-state').textContent = '已暂停 · ' + state.index + '/' + incoming.length;
+          document.getElementById('save-state').textContent = '未保存';
+          document.getElementById('revision-title').textContent = '修订 #05 已暂停';
+          document.getElementById('revision-copy').textContent = '已写入 ' + state.index + ' 行，可继续播放或单步写入。';
+          document.getElementById('revision-state').textContent = '已暂停';
+          document.getElementById('stage-line').textContent = '写入暂停 · 草稿仍保留';
+          runButton.textContent = '继续写入';
+        } else {
+          document.getElementById('top-label').textContent = '修订同步完成';
+          document.getElementById('file-state').textContent = '已同步 · #05';
+          document.getElementById('save-state').textContent = '已保存';
+          document.getElementById('revision-title').textContent = '修订 #05 已保存';
+          document.getElementById('revision-copy').textContent = '7 行内容已写入文件节点，并同步回当前 Agent 对话。';
+          document.getElementById('revision-state').textContent = '已同步';
+          document.getElementById('stage-line').textContent = '编辑完成 · 修订 #05 已同步';
+          runButton.textContent = '重新播放';
+        }
+        runButton.classList.toggle('is-running', writing);
+        stepButton.disabled = writing || synced;
+        renderLines();
+        renderMessages();
+      }
+      function commitCurrentLine() {
+        if (state.index >= incoming.length) return false;
+        state.index += 1;
+        state.charIndex = 0;
+        if (state.index >= incoming.length) state.phase = 'synced';
+        render();
+        if (state.phase === 'synced') announce('逐字编辑完成，修订 #05 已同步。');
+        return true;
+      }
+      function typeNextCharacter() {
+        if (state.index >= incoming.length) return false;
+        state.started = true;
+        var text = incoming[state.index].text;
+        if (!text.length || state.charIndex >= text.length) return commitCurrentLine();
+        state.charIndex += 1;
+        render();
+        return true;
+      }
+      function schedule(id) {
+        clearTimeout(timer);
+        var current = state.index < incoming.length ? incoming[state.index].text : '';
+        var delay = state.charIndex >= current.length && state.charIndex > 0 ? 150 : 34;
+        timer = setTimeout(function () {
+          if (id !== token || state.phase !== 'writing') return;
+          typeNextCharacter();
+          if (state.phase === 'writing') schedule(id);
+        }, delay);
+      }
+      function toggleRun() {
+        if (state.phase === 'writing') {
+          token += 1;
+          clearTimeout(timer);
+          state.phase = 'paused';
+          render();
+          announce('逐行写入已暂停。');
+          return;
+        }
+        if (state.phase === 'synced') reset(false);
+        state.started = true;
+        state.phase = 'writing';
+        token += 1;
+        render();
+        announce(state.index || state.charIndex ? '继续逐字写入。' : '开始逐字写入文件节点。');
+        schedule(token);
+      }
+      function stepOnce() {
+        if (state.phase === 'writing' || state.phase === 'synced') return;
+        token += 1;
+        clearTimeout(timer);
+        state.phase = 'paused';
+        state.started = true;
+        state.charIndex = incoming[state.index].text.length;
+        commitCurrentLine();
+      }
+      function reset(shouldAnnounce) {
+        token += 1;
+        clearTimeout(timer);
+        state = { phase: 'ready', index: 0, charIndex: 0, started: false };
+        render();
+        if (shouldAnnounce !== false) announce('文件、对话与修订状态已重置。');
+      }
+      function applyView() {
+        world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.scale + ')';
+        zoomLabel.textContent = Math.round(view.scale * 100) + '%';
+        var major = 80 * view.scale;
+        var minor = 16 * view.scale;
+        viewport.style.backgroundPosition = view.x + 'px ' + view.y + 'px';
+        viewport.style.backgroundSize = major + 'px ' + major + 'px, ' + major + 'px ' + major + 'px, ' + minor + 'px ' + minor + 'px, ' + minor + 'px ' + minor + 'px';
+      }
+      function setView(x, y, scale) { view.x = x; view.y = y; view.scale = Math.max(.45, Math.min(1.6, scale)); applyView(); }
+      function fitView() {
+        var rect = viewport.getBoundingClientRect();
+        var minX = 35;
+        var minY = 30;
+        var width = 1065;
+        var height = 650;
+        var scale = Math.min(1.03, Math.max(.45, Math.min(rect.width / width, rect.height / height)));
+        setView((rect.width - width * scale) / 2 - minX * scale, (rect.height - height * scale) / 2 - minY * scale, scale);
+      }
+      function zoomAt(clientX, clientY, factor) {
+        var rect = viewport.getBoundingClientRect();
+        var px = clientX - rect.left;
+        var py = clientY - rect.top;
+        var worldX = (px - view.x) / view.scale;
+        var worldY = (py - view.y) / view.scale;
+        var next = Math.max(.45, Math.min(1.6, view.scale * factor));
+        setView(px - worldX * next, py - worldY * next, next);
+      }
+      viewport.addEventListener('pointerdown', function (event) {
+        if (event.button !== 0 || event.target.closest('.file-node, .revision-node')) return;
+        gesture = { x: event.clientX, y: event.clientY, startX: view.x, startY: view.y };
+        viewport.classList.add('is-panning');
+      });
+      viewport.addEventListener('pointermove', function (event) { if (!gesture) return; setView(gesture.startX + event.clientX - gesture.x, gesture.startY + event.clientY - gesture.y, view.scale); });
+      viewport.addEventListener('pointerup', function () { gesture = null; viewport.classList.remove('is-panning'); });
+      viewport.addEventListener('pointercancel', function () { gesture = null; viewport.classList.remove('is-panning'); });
+      viewport.addEventListener('wheel', function (event) { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.1 : .9); }, { passive: false });
+      document.getElementById('zoom-in').addEventListener('click', function () { var rect = viewport.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.12); });
+      document.getElementById('zoom-out').addEventListener('click', function () { var rect = viewport.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, .88); });
+      document.getElementById('fit-view').addEventListener('click', fitView);
+      runButton.addEventListener('click', toggleRun);
+      stepButton.addEventListener('click', stepOnce);
+      document.getElementById('reset-button').addEventListener('click', function () { reset(true); });
+      addEventListener('resize', fitView);
+      render();
+      requestAnimationFrame(fitView);
+    }());
+  </script>
 </body>
 </html>

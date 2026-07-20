@@ -1,683 +1,482 @@
-<!DOCTYPE html>
-<html lang="zh">
+<!doctype html>
+<html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>双向同步 — SYNC</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
-:root {
-  --bg: #f0ebe0; --bg-canvas: #e8e2d4; --bg-panel: #faf7f0;
-  --bg-card: #ffffff; --bg-card-hi: #f5f1e8;
-  --primary: #4a7c9e; --primary-dim: #6b9bb8; --primary-bg: #e3edf3;
-  --success: #5b8c5a; --success-bg: #e8f0e8;
-  --warning: #c4944a; --warning-bg: #f5edd9;
-  --asset: #8b6fb0; --asset-bg: #ede8f5;
-  --text: #3d3d3d; --text-dim: #8a8a8a; --text-hi: #1a1a1a;
-  --border: #c9c2b0; --border-hi: #a89e85; --shadow: #d4cdb9;
-}
-* { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; overflow:hidden; }
-body {
-  font-family:'VT323',monospace; font-size:18px;
-  background:var(--bg); color:var(--text); user-select:none;
-}
-
-/* ===== 顶栏 ===== */
-.topbar {
-  position:fixed; top:0; left:0; right:0; z-index:200;
-  height:56px; background:var(--bg-panel);
-  border-bottom:3px solid var(--border-hi); box-shadow:0 3px 0 var(--shadow);
-  display:flex; align-items:center; gap:14px; padding:0 20px;
-}
-.sync-indicator { display:flex; align-items:center; gap:8px; }
-.sync-dot {
-  width:12px; height:12px; background:var(--success);
-  animation:sync-pulse 1.5s ease-in-out infinite;
-}
-@keyframes sync-pulse {
-  0%,100% { box-shadow:0 0 0 0 rgba(91,140,90,.6); }
-  50% { box-shadow:0 0 0 8px rgba(91,140,90,0); }
-}
-.sync-indicator.flash .sync-dot { animation:sync-flash .5s ease 2; }
-@keyframes sync-flash {
-  0%,100% { background:var(--success); transform:scale(1); }
-  50% { background:var(--primary); transform:scale(1.6); }
-}
-.sync-text { font-family:'Press Start 2P',monospace; font-size:11px; color:var(--success); }
-.topbar .title { font-family:'Press Start 2P',monospace; font-size:13px; color:var(--text-hi); }
-.topbar .desc { font-size:17px; color:var(--text-dim); }
-.topbar .spacer { flex:1; }
-.replay-btn {
-  font-family:'Press Start 2P',monospace; font-size:10px; color:#fff;
-  background:var(--text-hi); border:3px solid var(--text-hi); padding:10px 14px;
-  cursor:pointer; box-shadow:4px 4px 0 var(--shadow); transition:transform .1s;
-}
-.replay-btn:hover { transform:translate(2px,2px); box-shadow:2px 2px 0 var(--shadow); }
-.replay-btn:active { transform:translate(4px,4px); box-shadow:0 0 0 var(--shadow); }
-
-/* ===== 主布局 ===== */
-.main {
-  position:fixed; top:56px; left:0; right:0; bottom:0;
-  display:flex;
-}
-
-/* ===== 左侧对话 ===== */
-.chat-panel {
-  width:380px; flex-shrink:0;
-  background:var(--bg-panel); border-right:3px solid var(--border-hi);
-  display:flex; flex-direction:column;
-}
-.chat-header {
-  padding:10px 16px; border-bottom:2px solid var(--border);
-  display:flex; align-items:center; gap:10px;
-}
-.chat-title { font-family:'Press Start 2P',monospace; font-size:11px; color:var(--text-hi); }
-.chat-status {
-  font-size:14px; color:var(--success); margin-left:auto;
-  display:flex; align-items:center; gap:4px;
-}
-.chat-status::before { content:''; width:8px; height:8px; background:var(--success); }
-.chat-messages {
-  flex:1; overflow-y:auto; padding:16px;
-  display:flex; flex-direction:column; gap:10px;
-}
-.chat-messages::-webkit-scrollbar { width:8px; }
-.chat-messages::-webkit-scrollbar-thumb { background:var(--border-hi); }
-.chat-msg { display:flex; gap:8px; animation:msg-in .3s ease; max-width:100%; }
-.chat-msg.user { flex-direction:row-reverse; }
-@keyframes msg-in { from { opacity:0; transform:translateY(10px); } }
-.chat-avatar {
-  width:32px; height:32px; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center;
-  font-family:'Press Start 2P',monospace; font-size:9px; color:#fff;
-}
-.chat-msg.agent .chat-avatar { background:var(--primary); }
-.chat-msg.user .chat-avatar { background:var(--asset); }
-.chat-bubble {
-  max-width:260px; padding:8px 12px; font-size:16px; line-height:1.4;
-  border:2px solid var(--border-hi); word-break:break-word;
-}
-.chat-msg.agent .chat-bubble { background:var(--bg-card); box-shadow:3px 3px 0 var(--shadow); }
-.chat-msg.user .chat-bubble { background:var(--asset-bg); text-align:right; box-shadow:-3px 3px 0 var(--shadow); }
-.chat-msg.agent.sync-confirm .chat-bubble { border-color:var(--success); background:var(--success-bg); }
-.typing-indicator {
-  display:flex; gap:4px; padding:10px 14px;
-  background:var(--bg-card); border:2px solid var(--border-hi);
-  box-shadow:3px 3px 0 var(--shadow); width:fit-content;
-}
-.typing-dot { width:7px; height:7px; background:var(--text-dim); animation:typing-bounce .6s ease infinite; }
-.typing-dot:nth-child(2) { animation-delay:.2s; }
-.typing-dot:nth-child(3) { animation-delay:.4s; }
-@keyframes typing-bounce { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
-
-.chat-input-area {
-  padding:10px 16px; border-top:2px solid var(--border);
-  display:flex; gap:8px;
-}
-.chat-input-area input {
-  flex:1; font-family:'VT323',monospace; font-size:17px;
-  padding:8px 10px; border:2px solid var(--border-hi);
-  background:var(--bg-card); color:var(--text); outline:none;
-}
-.chat-input-area input:focus { border-color:var(--primary); }
-.chat-input-area input::placeholder { color:var(--text-dim); }
-.chat-send {
-  font-family:'Press Start 2P',monospace; font-size:9px; color:#fff;
-  background:var(--primary); border:2px solid var(--text-hi);
-  padding:0 14px; cursor:pointer; box-shadow:3px 3px 0 var(--shadow); transition:transform .1s;
-}
-.chat-send:hover { transform:translate(1px,1px); box-shadow:2px 2px 0 var(--shadow); }
-.chat-send:active { transform:translate(3px,3px); box-shadow:0 0 0 var(--shadow); }
-
-/* ===== 右侧画布 ===== */
-.canvas-panel { flex:1; display:flex; flex-direction:column; background:var(--bg); }
-.canvas-header {
-  padding:10px 20px; border-bottom:2px solid var(--border);
-  display:flex; align-items:center; gap:12px;
-}
-.canvas-title { font-family:'Press Start 2P',monospace; font-size:11px; color:var(--text-hi); }
-.canvas-hint { font-size:15px; color:var(--text-dim); margin-left:auto; }
-.canvas-area {
-  flex:1; position:relative; overflow:hidden;
-  background-color:var(--bg-canvas);
-  background-image:
-    linear-gradient(rgba(168,158,133,.18) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(168,158,133,.18) 1px, transparent 1px);
-  background-size:24px 24px;
-}
-.connections { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; }
-
-/* ===== 节点 ===== */
-.node {
-  position:absolute; z-index:2; width:210px;
-  background:var(--bg-card); border:3px solid var(--border-hi);
-  box-shadow:5px 5px 0 var(--shadow);
-  transition:box-shadow .2s, border-color .2s;
-}
-.node.highlight { animation:node-spawn .8s ease; }
-@keyframes node-spawn {
-  0% { opacity:0; transform:scale(.3); }
-  50% { opacity:1; transform:scale(1.08); box-shadow:0 0 0 4px var(--primary), 5px 5px 0 var(--shadow); }
-  100% { opacity:1; transform:scale(1); }
-}
-.node.updated { animation:node-pulse .6s ease; }
-@keyframes node-pulse {
-  0%,100% { box-shadow:5px 5px 0 var(--shadow); }
-  50% { box-shadow:0 0 0 3px var(--asset), 5px 5px 0 var(--shadow); }
-}
-.node.completed { border-color:var(--success); }
-.node-head {
-  display:flex; align-items:center; gap:8px;
-  padding:8px 10px; border-bottom:2px solid var(--border);
-  background:var(--bg-card-hi);
-}
-.node-dot { width:8px; height:8px; background:var(--primary); flex-shrink:0; }
-.node.completed .node-dot { background:var(--success); }
-.node-title { font-size:16px; color:var(--text-hi); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.node.completed .node-title { text-decoration:line-through; color:var(--text-dim); }
-.node-body {
-  padding:10px; font-size:15px; line-height:1.4; color:var(--text);
-  min-height:50px; user-select:text; -webkit-user-select:text;
-}
-.node.completed .node-body { color:var(--text-dim); }
-.node-foot { padding:8px 10px; border-top:2px solid var(--border); display:flex; gap:6px; }
-.node-btn {
-  font-family:'VT323',monospace; font-size:15px;
-  padding:4px 10px; cursor:pointer; border:2px solid var(--border-hi);
-  background:var(--bg-card); color:var(--text); transition:all .1s;
-  box-shadow:2px 2px 0 var(--shadow);
-}
-.node-btn:hover { background:var(--primary-bg); border-color:var(--primary); transform:translate(1px,1px); box-shadow:1px 1px 0 var(--shadow); }
-.node-btn:active { transform:translate(2px,2px); box-shadow:0 0 0 var(--shadow); }
-.node-btn.complete-btn { color:var(--success); border-color:var(--success); }
-.node-btn.complete-btn:hover { background:var(--success-bg); }
-.node-btn.done { background:var(--success); color:#fff; border-color:var(--success); cursor:default; }
-.node-btn.done:hover { transform:none; box-shadow:2px 2px 0 var(--shadow); }
-
-/* 标注（提问后添加） */
-.annotation {
-  margin-top:8px; padding:5px 8px; background:var(--asset-bg);
-  border-left:3px solid var(--asset); font-size:14px; animation:ann-in .3s ease;
-}
-@keyframes ann-in { from { opacity:0; transform:translateX(-8px); } }
-.ann-q { display:block; color:var(--asset); font-weight:bold; }
-.ann-a { display:block; color:var(--text); margin-top:2px; }
-
-/* ===== 浮动选择菜单 ===== */
-.selection-menu {
-  position:fixed; z-index:500; display:flex; gap:2px;
-  background:var(--text-hi); padding:4px;
-  box-shadow:4px 4px 0 var(--shadow);
-  animation:menu-in .15s ease;
-}
-.selection-menu.hidden { display:none; }
-@keyframes menu-in { from { opacity:0; transform:translateY(8px); } }
-.sel-btn {
-  background:var(--text-hi); color:#fff; border:none;
-  font-family:'VT323',monospace; font-size:15px; padding:5px 10px; cursor:pointer;
-  transition:background .1s;
-}
-.sel-btn:hover { background:var(--primary); }
-
-/* ===== 提问弹窗 ===== */
-.question-popup {
-  position:fixed; z-index:510; background:var(--bg-panel);
-  border:3px solid var(--border-hi); box-shadow:6px 6px 0 var(--shadow);
-  padding:14px; width:300px; animation:menu-in .15s ease;
-}
-.question-popup.hidden { display:none; }
-.qp-label { font-family:'Press Start 2P',monospace; font-size:10px; color:var(--text-hi); margin-bottom:8px; }
-.qp-context { font-size:14px; color:var(--text-dim); margin-bottom:8px; padding:6px; background:var(--bg-card); border:2px solid var(--border); }
-.qp-context b { color:var(--asset); }
-.question-popup input {
-  width:100%; font-family:'VT323',monospace; font-size:16px;
-  padding:8px; border:2px solid var(--border-hi); background:var(--bg-card);
-  color:var(--text); outline:none;
-}
-.question-popup input:focus { border-color:var(--primary); }
-.qp-actions { display:flex; gap:8px; margin-top:10px; justify-content:flex-end; }
-.qp-btn { font-family:'Press Start 2P',monospace; font-size:9px; padding:7px 12px; cursor:pointer; border:2px solid var(--text-hi); box-shadow:3px 3px 0 var(--shadow); transition:transform .1s; }
-.qp-btn:hover { transform:translate(1px,1px); box-shadow:2px 2px 0 var(--shadow); }
-.qp-btn.send { background:var(--primary); color:#fff; }
-.qp-btn.cancel { background:var(--bg-card); color:var(--text); }
-
-/* 保存提示 */
-.save-toast {
-  position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:600;
-  background:var(--success); color:#fff; font-family:'Press Start 2P',monospace; font-size:10px;
-  padding:10px 18px; box-shadow:4px 4px 0 var(--shadow);
-  animation:toast-show 1.5s ease forwards;
-}
-@keyframes toast-show {
-  0% { opacity:0; transform:translate(-50%,20px); }
-  20%,80% { opacity:1; transform:translate(-50%,0); }
-  100% { opacity:0; transform:translate(-50%,-10px); }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>NextStep｜对话自动落图</title>
+  <style>
+    :root {
+      --bg: #05090d;
+      --panel: #091119;
+      --surface: #101c26;
+      --ink: #edf5f7;
+      --muted: #8ea0aa;
+      --faint: #5c6d77;
+      --line: rgba(170, 201, 215, .16);
+      --line-strong: rgba(170, 201, 215, .3);
+      --blue: #69b8e8;
+      --blue-soft: rgba(76, 164, 220, .15);
+      --amber: #e4aa5b;
+      --amber-soft: rgba(228, 170, 91, .12);
+      --green: #53cf91;
+      --green-soft: rgba(83, 207, 145, .13);
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); }
+    body { color: var(--ink); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+    button { color: inherit; font: inherit; }
+    button:focus-visible, [tabindex="0"]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .app { display: grid; grid-template-rows: 46px minmax(0, 1fr); width: 100%; height: 100%; background: var(--bg); }
+    .topbar { position: relative; z-index: 30; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); background: rgba(5, 9, 13, .94); }
+    .brand { display: flex; align-items: center; min-width: 0; gap: 10px; }
+    .brand-mark { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid rgba(83, 207, 145, .5); color: var(--green); font: 700 11px/1 var(--mono); }
+    .brand strong { font: 600 12px/1 var(--mono); letter-spacing: .08em; }
+    .brand span { overflow: hidden; color: var(--faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .top-state { display: flex; align-items: center; gap: 7px; color: var(--muted); font: 10px/1 var(--mono); }
+    .top-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 9px rgba(83, 207, 145, .65); }
+    .workbench { --agent-width: 30%; display: grid; grid-template-columns: minmax(230px, var(--agent-width)) 5px minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .agent { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; background: rgba(8, 15, 21, .96); }
+    .agent-head { display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+    .agent-head strong { display: block; font-size: 13px; }
+    .agent-head small { display: block; margin-top: 2px; color: var(--faint); font-size: 10.5px; }
+    .avatar { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(105, 184, 232, .36); color: var(--blue); background: var(--blue-soft); font: 700 10px/1 var(--mono); }
+    .messages { min-height: 0; overflow: auto; padding: 14px; scrollbar-width: thin; scrollbar-color: rgba(132, 160, 173, .28) transparent; }
+    .message { display: none; margin: 0 0 17px; }
+    .message.is-visible { display: block; animation: rise .2s ease both; }
+    .message-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--faint); font: 9px/1 var(--mono); }
+    .message-meta b { color: var(--blue); font-weight: 600; }
+    .message.user .message-meta b { color: var(--amber); }
+    .bubble { padding: 9px 10px; border: 1px solid var(--line); color: #dce7e9; background: rgba(14, 25, 34, .78); font-size: 12px; line-height: 1.6; }
+    .message.user .bubble { border-color: rgba(228, 170, 91, .24); background: rgba(228, 170, 91, .07); }
+    .bubble p { margin: 0; }
+    .trace { display: flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--faint); font-size: 9.5px; }
+    .trace::before { width: 10px; height: 1px; background: var(--blue); content: ""; }
+    .message.confirm .bubble { border-color: rgba(83, 207, 145, .3); background: rgba(83, 207, 145, .07); }
+    .message.confirm .message-meta b { color: var(--green); }
+    .agent-foot { padding: 11px 13px; border-top: 1px solid var(--line); background: rgba(6, 11, 16, .88); }
+    .stage-line { margin-bottom: 8px; color: var(--muted); font-size: 10.5px; }
+    .agent-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+    .run-button { min-height: 39px; border: 1px solid rgba(83, 207, 145, .55); color: #06130d; background: var(--green); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .run-button.is-running { border-color: rgba(105, 184, 232, .48); color: var(--blue); background: var(--blue-soft); }
+    .quiet-button { min-width: 58px; min-height: 39px; padding: 0 10px; border: 1px solid var(--line-strong); color: var(--muted); background: transparent; cursor: pointer; }
+    .run-button:hover, .quiet-button:hover { filter: brightness(1.08); }
+    .divider { position: relative; z-index: 25; border-right: 1px solid rgba(170, 201, 215, .14); border-left: 1px solid rgba(170, 201, 215, .14); background: #071019; cursor: col-resize; touch-action: none; }
+    .divider::after { position: absolute; top: 50%; left: 1px; width: 1px; height: 40px; background: rgba(105, 184, 232, .38); transform: translateY(-50%); content: ""; }
+    .divider.is-dragging::after { background: var(--blue); box-shadow: 0 0 10px rgba(105, 184, 232, .6); }
+    .canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #071019; }
+    .canvas-head { position: absolute; z-index: 16; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; min-height: 46px; padding: 0 12px; border-bottom: 1px solid var(--line); background: rgba(7, 16, 25, .9); backdrop-filter: blur(12px); }
+    .canvas-copy strong { font-size: 12px; font-weight: 650; }
+    .canvas-copy span { margin-left: 8px; color: var(--faint); font-size: 10px; }
+    .canvas-progress { color: var(--faint); font: 9px/1 var(--mono); }
+    .canvas-progress b { color: var(--blue); font-weight: 600; }
+    .viewport { position: absolute; inset: 46px 0 0; overflow: hidden; cursor: grab; touch-action: none; background-color: #071019; background-image: linear-gradient(rgba(126, 165, 183, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 165, 183, .07) 1px, transparent 1px), linear-gradient(rgba(126, 165, 183, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 165, 183, .025) 1px, transparent 1px); background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px; }
+    .viewport.is-panning { cursor: grabbing; }
+    .world { position: absolute; top: 0; left: 0; width: 1200px; height: 760px; transform-origin: 0 0; will-change: transform; }
+    .edges { position: absolute; inset: 0; width: 1200px; height: 760px; overflow: visible; pointer-events: none; }
+    .edge { fill: none; stroke: rgba(105, 184, 232, .38); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .edge.is-building { stroke: var(--blue); stroke-dasharray: 6 5; animation: dash 1.5s linear infinite; }
+    .edge.is-done { stroke: rgba(83, 207, 145, .62); }
+    .node { position: absolute; z-index: 3; width: 250px; border: 1px solid rgba(145, 181, 198, .3); color: var(--ink); background: rgba(13, 24, 33, .97); box-shadow: 0 16px 36px rgba(0, 0, 0, .3); opacity: 0; transform: translateY(7px); pointer-events: none; transition: opacity .2s ease, transform .2s ease, border-color .18s ease, box-shadow .18s ease; }
+    .node.is-visible { opacity: 1; transform: none; pointer-events: auto; }
+    .node:hover, .node.is-selected { border-color: rgba(105, 184, 232, .7); box-shadow: 0 18px 42px rgba(0, 0, 0, .38), 0 0 0 1px rgba(105, 184, 232, .12); }
+    .node.is-done { border-color: rgba(83, 207, 145, .52); }
+    .node-head { display: flex; align-items: center; gap: 8px; min-height: 35px; padding: 0 10px; border-bottom: 1px solid var(--line); background: rgba(20, 36, 47, .68); cursor: move; user-select: none; }
+    .node-icon { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid rgba(105, 184, 232, .35); color: var(--blue); font: 700 9px/1 var(--mono); }
+    .node-title { flex: 1; overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .node-source { padding: 3px 5px; border: 1px solid var(--line); color: var(--muted); font: 8px/1 var(--mono); }
+    .node-body { min-height: 78px; padding: 10px; }
+    .node-summary { margin: 0; color: #cbd8dc; font-size: 11px; line-height: 1.55; cursor: text; user-select: text; }
+    .node-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; color: var(--faint); font-size: 9.5px; }
+    .node-state { display: inline-flex; align-items: center; gap: 5px; }
+    .node-state::before { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); content: ""; }
+    .node.is-done .node-state::before { background: var(--green); }
+    .port { position: absolute; z-index: 4; top: 50%; width: 10px; height: 10px; margin-top: -5px; border: 2px solid #08121a; border-radius: 50%; background: #6ea9c7; }
+    .port.in { left: -6px; }
+    .port.out { right: -6px; }
+    .inspector { position: absolute; z-index: 20; top: 58px; right: 12px; width: min(235px, calc(100% - 24px)); border: 1px solid var(--line-strong); background: rgba(8, 16, 22, .95); box-shadow: 0 18px 42px rgba(0, 0, 0, .36); backdrop-filter: blur(13px); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+    .inspector.is-open { opacity: 1; transform: none; pointer-events: auto; }
+    .inspector-head { display: flex; align-items: center; min-height: 38px; padding: 0 9px; border-bottom: 1px solid var(--line); }
+    .inspector-head strong { flex: 1; font-size: 11px; }
+    .inspector-close { width: 25px; height: 25px; border: 0; color: var(--faint); background: transparent; cursor: pointer; }
+    .inspect-body { padding: 10px; }
+    .inspect-body p { margin: 0; color: var(--muted); font-size: 10.5px; line-height: 1.55; }
+    .inspect-meta { display: flex; justify-content: space-between; margin-top: 9px; color: var(--faint); font: 9px/1 var(--mono); }
+    .complete-button { width: 100%; min-height: 34px; margin-top: 11px; border: 1px solid rgba(83, 207, 145, .5); color: var(--green); background: var(--green-soft); font-size: 11px; cursor: pointer; }
+    .complete-button:hover:not(:disabled) { background: rgba(83, 207, 145, .2); }
+    .complete-button:disabled { border-color: var(--line); color: var(--faint); background: transparent; cursor: default; }
+    .node-editor { width: 100%; min-height: 62px; margin-top: 10px; padding: 7px; resize: vertical; border: 1px solid var(--line); color: var(--ink); background: rgba(3, 8, 12, .58); font: 10px/1.45 var(--sans); }
+    .save-copy { width: 100%; min-height: 32px; margin-top: 6px; border: 1px solid rgba(105, 184, 232, .4); color: var(--blue); background: var(--blue-soft); font-size: 10.5px; cursor: pointer; }
+    .selection-tools { position: absolute; z-index: 22; left: 12px; bottom: 50px; display: none; align-items: center; max-width: calc(100% - 24px); min-height: 36px; border: 1px solid var(--line-strong); background: rgba(8, 16, 22, .96); box-shadow: 0 12px 30px rgba(0,0,0,.36); }
+    .selection-tools.is-open { display: flex; }
+    .selection-copy { max-width: 180px; padding: 0 9px; overflow: hidden; color: var(--muted); font: 9px/1 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .selection-action { min-height: 34px; padding: 0 9px; border: 0; border-left: 1px solid var(--line); color: var(--blue); background: transparent; font-size: 10px; cursor: pointer; }
+    .selection-action:hover { background: var(--blue-soft); }
+    .controls { position: absolute; z-index: 17; right: 12px; bottom: 12px; display: flex; align-items: center; border: 1px solid var(--line-strong); background: rgba(8, 16, 22, .9); }
+    .control { min-width: 34px; height: 34px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; cursor: pointer; }
+    .control:last-child { border-right: 0; }
+    .control:hover { color: var(--ink); background: rgba(105, 184, 232, .09); }
+    .zoom-label { min-width: 45px; color: var(--faint); font: 9px/1 var(--mono); text-align: center; }
+    .canvas-tip { position: absolute; z-index: 10; left: 12px; bottom: 14px; margin: 0; color: var(--faint); font-size: 9.5px; pointer-events: none; }
+    .live { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+    @keyframes rise { from { opacity: 0; transform: translateY(5px); } }
+    @keyframes dash { to { stroke-dashoffset: -22; } }
+    @media (max-width: 760px) {
+      html, body { overflow: auto; }
+      .app { height: auto; min-height: 1050px; grid-template-rows: 44px auto; }
+      .workbench { grid-template-columns: 1fr; grid-template-rows: 360px 650px; }
+      .divider { display: none; }
+      .agent { border-bottom: 1px solid var(--line-strong); }
+      .canvas { min-height: 650px; }
+      .brand span, .top-state span { display: none; }
+      .canvas-copy span { display: none; }
+      .canvas-tip { display: none; }
+      .selection-tools { left: 8px; bottom: 50px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+    }
+  </style>
 </head>
 <body>
-
-<!-- 顶栏 -->
-<header class="topbar">
-  <div class="sync-indicator" id="syncIndicator">
-    <span class="sync-dot"></span>
-    <span class="sync-text">SYNC</span>
-  </div>
-  <div class="title">双向同步</div>
-  <div class="desc">— 对话与画布实时双向联动</div>
-  <div class="spacer"></div>
-  <button class="replay-btn" id="replayBtn">重播对话</button>
-</header>
-
-<div class="main">
-  <!-- 左侧对话 -->
-  <section class="chat-panel">
-    <div class="chat-header">
-      <span class="chat-title">Agent 对话</span>
-      <span class="chat-status">在线</span>
-    </div>
-    <div class="chat-messages" id="chatMessages"></div>
-    <div class="chat-input-area">
-      <input type="text" id="chatInput" placeholder="输入消息后回车发送..." />
-      <button class="chat-send" id="chatSend">发送</button>
-    </div>
-  </section>
-
-  <!-- 右侧画布 -->
-  <section class="canvas-panel">
-    <div class="canvas-header">
-      <span class="canvas-title">任务画布</span>
-      <span class="canvas-hint">点击节点"完成" · 选中文字提问</span>
-    </div>
-    <div class="canvas-area" id="canvasArea">
-      <svg class="connections" id="connections"></svg>
-      <!-- 节点动态生成 -->
-    </div>
-  </section>
-</div>
-
-<!-- 浮动选择菜单 -->
-<div class="selection-menu hidden" id="selectionMenu">
-  <button class="sel-btn" data-action="ask">向agent提问</button>
-  <button class="sel-btn" data-action="edit">编辑内容</button>
-</div>
-
-<!-- 提问弹窗 -->
-<div class="question-popup hidden" id="questionPopup">
-  <div class="qp-label">向 Agent 提问</div>
-  <div class="qp-context" id="qpContext"></div>
-  <input type="text" id="qpInput" placeholder="输入你的问题..." />
-  <div class="qp-actions">
-    <button class="qp-btn cancel" id="qpCancel">取消</button>
-    <button class="qp-btn send" id="qpSend">发送</button>
-  </div>
-</div>
-
-<script>
-// ===== 对话脚本（自动播放） =====
-const script = [
-  { role:'agent', text:'你好，我来帮你规划今天的任务。' },
-  { role:'agent', text:'首先，创建任务"完成项目方案"。',
-    action:{ id:0, title:'完成项目方案', content:'整理参赛项目方案，包含技术选型和时间线', x:60, y:40 } },
-  { role:'agent', text:'接着，添加任务"整理报税资料"。',
-    action:{ id:1, title:'整理报税资料', content:'汇总2024年度收入和发票，准备申报', x:400, y:120 } },
-  { role:'agent', text:'再加一个任务"写小说第二章"。',
-    action:{ id:2, title:'写小说第二章', content:'完成"暗流"章节初稿，约3000字', x:100, y:300 } },
-  { role:'agent', text:'最后，添加任务"复习算法笔记"。',
-    action:{ id:3, title:'复习算法笔记', content:'复习动态规划和图论相关内容', x:430, y:380 } },
-  { role:'agent', text:'四个任务已关联。你可以点击节点的"完成"按钮，或选中文字向 Agent 提问。' },
-];
-
-// 节点连接关系
-const nodeConnections = [[0,1],[0,2],[1,3],[2,3]];
-
-// Agent 回复模板
-const agentReplies = [
-  '好的，建议先梳理核心需求，再逐步细化实现步骤。',
-  '根据现有信息，可以拆解为三个子步骤：分析、设计、验证。',
-  '已将建议补充到节点内容中，请查看画布更新。',
-  '这个方向不错，我帮你标注了关键点。',
-  '明白，节点内容已同步更新，你可以继续操作。',
-];
-
-// ===== DOM 引用 =====
-const chatMessages = document.getElementById('chatMessages');
-const chatInput = document.getElementById('chatInput');
-const chatSend = document.getElementById('chatSend');
-const canvasArea = document.getElementById('canvasArea');
-const connectionsSvg = document.getElementById('connections');
-const selectionMenu = document.getElementById('selectionMenu');
-const questionPopup = document.getElementById('questionPopup');
-const qpContext = document.getElementById('qpContext');
-const qpInput = document.getElementById('qpInput');
-const qpSend = document.getElementById('qpSend');
-const qpCancel = document.getElementById('qpCancel');
-const replayBtn = document.getElementById('replayBtn');
-const syncIndicator = document.getElementById('syncIndicator');
-
-// 节点数据
-const nodes = []; // { id, el, title, content, completed }
-
-// ===== 工具函数 =====
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function flashSync() {
-  syncIndicator.classList.add('flash');
-  setTimeout(() => syncIndicator.classList.remove('flash'), 1000);
-}
-
-function scrollChatBottom() {
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-// ===== 添加聊天消息 =====
-function addMessage(role, text, extraClass='') {
-  const msg = document.createElement('div');
-  msg.className = `chat-msg ${role} ${extraClass}`;
-  const avatarText = role === 'agent' ? 'A' : 'U';
-  msg.innerHTML = `
-    <div class="chat-avatar">${avatarText}</div>
-    <div class="chat-bubble">${text}</div>
-  `;
-  chatMessages.appendChild(msg);
-  scrollChatBottom();
-  return msg;
-}
-
-function addTyping() {
-  const t = document.createElement('div');
-  t.className = 'typing-indicator';
-  t.id = 'typingIndicator';
-  t.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-  chatMessages.appendChild(t);
-  scrollChatBottom();
-  return t;
-}
-
-// ===== 创建节点 =====
-function createNode(data) {
-  const el = document.createElement('div');
-  el.className = 'node highlight';
-  el.dataset.id = data.id;
-  el.style.left = data.x + 'px';
-  el.style.top = data.y + 'px';
-  el.innerHTML = `
-    <div class="node-head">
-      <span class="node-dot"></span>
-      <span class="node-title">${data.title}</span>
-    </div>
-    <div class="node-body">${data.content}</div>
-    <div class="node-foot">
-      <button class="node-btn complete-btn">完成</button>
-    </div>
-  `;
-  canvasArea.appendChild(el);
-
-  const nodeData = { id:data.id, el, title:data.title, content:data.content, completed:false };
-  nodes[data.id] = nodeData;
-
-  // 完成按钮
-  const completeBtn = el.querySelector('.complete-btn');
-  completeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    completeNode(nodeData);
-  });
-
-  // 选中文字监听
-  el.querySelector('.node-body').addEventListener('mouseup', (e) => {
-    handleSelection(e, nodeData);
-  });
-
-  // 高亮动画结束后移除 class
-  setTimeout(() => el.classList.remove('highlight'), 800);
-
-  // 更新连接线
-  updateConnections();
-  flashSync();
-  return nodeData;
-}
-
-// ===== 更新连接线 =====
-function updateConnections() {
-  connectionsSvg.innerHTML = '';
-  nodeConnections.forEach(([a, b]) => {
-    if (!nodes[a] || !nodes[b]) return;
-    const ea = nodes[a].el, eb = nodes[b].el;
-    const xa = ea.offsetLeft + ea.offsetWidth / 2;
-    const ya = ea.offsetTop + ea.offsetHeight / 2;
-    const xb = eb.offsetLeft + eb.offsetWidth / 2;
-    const yb = eb.offsetTop + eb.offsetHeight / 2;
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', xa); line.setAttribute('y1', ya);
-    line.setAttribute('x2', xb); line.setAttribute('y2', yb);
-    line.setAttribute('stroke', '#a89e85');
-    line.setAttribute('stroke-width', '2');
-    line.setAttribute('stroke-dasharray', '6 4');
-    connectionsSvg.appendChild(line);
-  });
-}
-
-// ===== 完成节点（画布→对话） =====
-function completeNode(nodeData) {
-  if (nodeData.completed) return;
-  nodeData.completed = true;
-  nodeData.el.classList.add('completed');
-  const btn = nodeData.el.querySelector('.complete-btn');
-  btn.textContent = '已完成';
-  btn.classList.add('done');
-  btn.disabled = true;
-
-  // 对话窗口出现 agent 确认消息
-  setTimeout(() => {
-    const t = addTyping();
-    setTimeout(() => {
-      t.remove();
-      addMessage('agent', `✓ 已确认完成：「${nodeData.title}」，同步状态已更新。`, 'sync-confirm');
-      flashSync();
-    }, 600);
-  }, 300);
-}
-
-// ===== 选中文字处理 =====
-let currentSelection = null;
-
-function handleSelection(e, nodeData) {
-  setTimeout(() => {
-    const sel = window.getSelection();
-    const text = sel.toString().trim();
-    if (text.length < 2) {
-      selectionMenu.classList.add('hidden');
-      return;
-    }
-    // 确认选区在当前节点内
-    const range = sel.getRangeAt(0);
-    if (!nodeData.el.contains(range.commonAncestorContainer)) return;
-
-    currentSelection = { node: nodeData, text };
-    const rect = range.getBoundingClientRect();
-    selectionMenu.style.left = (rect.left + rect.width / 2 - 80) + 'px';
-    selectionMenu.style.top = (rect.top - 42) + 'px';
-    selectionMenu.classList.remove('hidden');
-  }, 10);
-}
-
-// 选择菜单按钮
-selectionMenu.querySelectorAll('.sel-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const action = btn.dataset.action;
-    if (!currentSelection) return;
-    const rect = selectionMenu.getBoundingClientRect();
-    selectionMenu.classList.add('hidden');
-
-    if (action === 'ask') {
-      showQuestionPopup(rect.left, rect.top + 40);
-    } else if (action === 'edit') {
-      enableEdit(currentSelection.node);
-    }
-  });
-});
-
-// 点击空白处关闭菜单
-document.addEventListener('mousedown', (e) => {
-  if (!e.target.closest('.selection-menu') && !e.target.closest('.question-popup')) {
-    selectionMenu.classList.add('hidden');
-    if (!e.target.closest('.node-body')) {
-      // 保留选区直到用户操作完成
-    }
-  }
-});
-
-// ===== 提问弹窗 =====
-function showQuestionPopup(x, y) {
-  const sel = currentSelection.text;
-  const preview = sel.length > 40 ? sel.slice(0, 40) + '...' : sel;
-  qpContext.innerHTML = `选中内容：<b>「${preview}」</b>`;
-  questionPopup.style.left = Math.min(x, window.innerWidth - 320) + 'px';
-  questionPopup.style.top = Math.min(y, window.innerHeight - 180) + 'px';
-  questionPopup.classList.remove('hidden');
-  qpInput.value = '';
-  setTimeout(() => qpInput.focus(), 50);
-}
-
-qpCancel.addEventListener('click', () => {
-  questionPopup.classList.add('hidden');
-  currentSelection = null;
-});
-
-qpSend.addEventListener('click', sendQuestion);
-qpInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendQuestion();
-  if (e.key === 'Escape') { questionPopup.classList.add('hidden'); currentSelection = null; }
-});
-
-function sendQuestion() {
-  const question = qpInput.value.trim();
-  if (!question) return;
-  const node = currentSelection.node;
-  const selText = currentSelection.text;
-  questionPopup.classList.add('hidden');
-  window.getSelection().removeAllRanges();
-
-  // 对话窗口出现用户提问消息
-  const preview = selText.length > 30 ? selText.slice(0,30) + '...' : selText;
-  addMessage('user', `关于「${node.title} / ${preview}」：${question}`);
-  flashSync();
-
-  // Agent 回复
-  const t = addTyping();
-  setTimeout(() => {
-    t.remove();
-    const reply = agentReplies[Math.floor(Math.random() * agentReplies.length)];
-    addMessage('agent', reply);
-
-    // 画布节点内容更新（添加标注）
-    const body = node.el.querySelector('.node-body');
-    const ann = document.createElement('div');
-    ann.className = 'annotation';
-    ann.innerHTML = `<span class="ann-q">Q: ${question}</span><span class="ann-a">A: ${reply}</span>`;
-    body.appendChild(ann);
-
-    // 节点高亮动画
-    node.el.classList.add('updated');
-    setTimeout(() => node.el.classList.remove('updated'), 600);
-
-    flashSync();
-  }, 1200);
-
-  currentSelection = null;
-}
-
-// ===== 编辑内容 =====
-function enableEdit(nodeData) {
-  const body = nodeData.el.querySelector('.node-body');
-  body.contentEditable = true;
-  body.focus();
-  // 选中全部
-  document.execCommand('selectAll', false, null);
-
-  body.addEventListener('blur', function onBlur() {
-    body.contentEditable = false;
-    body.removeEventListener('blur', onBlur);
-    nodeData.content = body.textContent.split('\n')[0]; // 保存第一段
-    showSaveToast();
-    flashSync();
-  });
-  body.addEventListener('keydown', function onKey(e) {
-    if (e.key === 'Enter') { e.preventDefault(); body.blur(); }
-    if (e.key === 'Escape') { body.blur(); }
-  });
-}
-
-function showSaveToast() {
-  const t = document.createElement('div');
-  t.className = 'save-toast';
-  t.textContent = '已保存';
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 1500);
-}
-
-// ===== 手动发送消息 =====
-chatSend.addEventListener('click', sendChatMessage);
-chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChatMessage();
-});
-
-function sendChatMessage() {
-  const text = chatInput.value.trim();
-  if (!text) return;
-  addMessage('user', text);
-  chatInput.value = '';
-  flashSync();
-
-  const t = addTyping();
-  setTimeout(() => {
-    t.remove();
-    const reply = agentReplies[Math.floor(Math.random() * agentReplies.length)];
-    addMessage('agent', reply);
-  }, 1000);
-}
-
-// ===== 自动播放对话脚本 =====
-let playing = false;
-
-async function playScript() {
-  if (playing) return;
-  playing = true;
-
-  for (const msg of script) {
-    await delay(900);
-    // 显示打字指示器
-    const t = addTyping();
-    await delay(700);
-    t.remove();
-    // 显示消息
-    addMessage(msg.role, msg.text);
-    // 触发画布动作
-    if (msg.action) {
-      await delay(400);
-      createNode(msg.action);
-    }
-    flashSync();
-  }
-  playing = false;
-}
-
-// ===== 重播 =====
-replayBtn.addEventListener('click', () => {
-  if (playing) return;
-  // 清空
-  chatMessages.innerHTML = '';
-  nodes.forEach(n => { if (n && n.el) n.el.remove(); });
-  nodes.length = 0;
-  connectionsSvg.innerHTML = '';
-  selectionMenu.classList.add('hidden');
-  questionPopup.classList.add('hidden');
-  playScript();
-});
-
-// ===== 启动 =====
-playScript();
-</script>
+  <main class="app">
+    <header class="topbar"><div class="brand"><span class="brand-mark">N</span><strong>NEXTSTEP</strong><span>对话自动落图</span></div><div class="top-state"><i></i><span>本地演示 · 状态隔离</span></div></header>
+    <section class="workbench" id="workbench" aria-label="对话与执行画布">
+      <aside class="agent" aria-label="Agent 对话">
+        <header class="agent-head"><div><strong>执行 Agent</strong><small>对话生成结构，节点回写结果</small></div><span class="avatar">AI</span></header>
+        <div class="messages" id="messages" aria-live="polite">
+          <article class="message user is-visible" data-stage="0"><div class="message-meta"><b>我</b><span>刚刚</span></div><div class="bubble"><p>把发布候选版拆成可验收步骤，并放进画布。</p></div></article>
+          <article class="message" data-stage="1"><div class="message-meta"><b>Agent</b><span>识别意图</span></div><div class="bubble"><p>已建立“发布候选版”根任务，接下来生成三个验收节点。</p><div class="trace">创建：根任务 #01</div></div></article>
+          <article class="message" data-stage="2"><div class="message-meta"><b>Agent</b><span>正在落图</span></div><div class="bubble"><p>接口契约、失败恢复与灰度清单已创建并连接。</p><div class="trace">来源：用户消息 #01</div></div></article>
+          <article class="message" data-stage="3"><div class="message-meta"><b>Agent</b><span>等待执行</span></div><div class="bubble"><p>结构已落图。选择任一子节点并标记完成，结果会回写到这里。</p><div class="trace">画布：4 节点 / 3 连接</div></div></article>
+          <article class="message confirm" id="confirm-message"><div class="message-meta"><b>Agent</b><span>已确认回写</span></div><div class="bubble"><p id="confirm-copy"></p><div class="trace" id="confirm-trace">修订 #01</div></div></article>
+          <article class="message confirm" id="feedback-message"><div class="message-meta"><b>Agent</b><span>来自节点文字</span></div><div class="bubble"><p id="feedback-copy"></p><div class="trace" id="feedback-trace"></div></div></article>
+        </div>
+        <footer class="agent-foot"><div class="stage-line" id="stage-line">意图已收到，等待落图</div><div class="agent-actions"><button class="run-button" id="run-button" type="button">开始落图</button><button class="quiet-button" id="reset-button" type="button">重置</button></div></footer>
+      </aside>
+      <div class="divider" id="divider" role="separator" aria-label="调整 Agent 与画布宽度" aria-orientation="vertical" tabindex="0"></div>
+      <section class="canvas" aria-label="可平移缩放的任务画布">
+        <header class="canvas-head"><div class="canvas-copy"><strong>发布候选版</strong><span>拖动画布 · 滚轮缩放 · 拖动节点</span></div><div class="canvas-progress">落图 <b id="stage-value">0 / 3</b></div></header>
+        <div class="viewport" id="viewport">
+          <div class="world" id="world">
+            <svg class="edges" id="edges" viewBox="0 0 1200 760" aria-hidden="true"></svg>
+            <article class="node" data-id="root" data-stage="1" data-x="110" data-y="285" tabindex="0"><span class="port out"></span><header class="node-head"><span class="node-icon">T</span><strong class="node-title">发布候选版</strong><span class="node-source">ME</span></header><div class="node-body"><p class="node-summary">将发布准备拆成可验收、可回写的执行节点。</p><div class="node-foot"><span class="node-state" data-state-label>待创建</span><span>任务容器</span></div></div></article>
+            <article class="node" data-id="contract" data-stage="2" data-x="455" data-y="90" tabindex="0"><span class="port in"></span><header class="node-head"><span class="node-icon">T</span><strong class="node-title">接口契约检查</strong><span class="node-source">AI</span></header><div class="node-body"><p class="node-summary">冻结字段、异常响应与模拟数据。</p><div class="node-foot"><span class="node-state" data-state-label>待创建</span><span>验收节点</span></div></div></article>
+            <article class="node" data-id="recovery" data-stage="2" data-x="455" data-y="300" tabindex="0"><span class="port in"></span><header class="node-head"><span class="node-icon">T</span><strong class="node-title">失败恢复测试</strong><span class="node-source">AI</span></header><div class="node-body"><p class="node-summary">验证失败重试、回滚阈值与恢复证据。</p><div class="node-foot"><span class="node-state" data-state-label>待创建</span><span>验收节点</span></div></div></article>
+            <article class="node" data-id="release" data-stage="2" data-x="455" data-y="510" tabindex="0"><span class="port in"></span><header class="node-head"><span class="node-icon">T</span><strong class="node-title">灰度发布清单</strong><span class="node-source">AI</span></header><div class="node-body"><p class="node-summary">确认负责人、顺序与关键观察指标。</p><div class="node-foot"><span class="node-state" data-state-label>待创建</span><span>验收节点</span></div></div></article>
+          </div>
+        </div>
+        <aside class="inspector" id="inspector" aria-hidden="true"><header class="inspector-head"><strong id="inspect-title">节点详情</strong><button class="inspector-close" id="inspect-close" type="button" aria-label="关闭节点详情">×</button></header><div class="inspect-body"><p id="inspect-copy"></p><div class="inspect-meta"><span id="inspect-state">待执行</span><span id="inspect-revision">未回写</span></div><textarea class="node-editor" id="node-editor" aria-label="编辑节点文字"></textarea><button class="save-copy" id="save-copy" type="button">保存节点文字</button><button class="complete-button" id="complete-button" type="button">标记完成并回写</button></div></aside>
+        <div class="selection-tools" id="selection-tools" aria-hidden="true"><span class="selection-copy" id="selection-copy"></span><button class="selection-action" id="selection-ask" type="button">询问 Agent</button><button class="selection-action" id="selection-edit" type="button">编辑节点</button></div>
+        <div class="controls" aria-label="画布控制"><button class="control" id="zoom-out" type="button" aria-label="缩小">−</button><span class="zoom-label" id="zoom-label">100%</span><button class="control" id="zoom-in" type="button" aria-label="放大">＋</button><button class="control" id="fit-view" type="button" aria-label="适应画布">⌂</button></div>
+        <p class="canvas-tip">点击节点查看 · 节点完成后自动回写 Agent</p>
+        <p class="live" id="live" role="status" aria-live="polite"></p>
+      </section>
+    </section>
+  </main>
+  <script>
+    (function () {
+      'use strict';
+      var nodeInfo = {
+        root: { title: '发布候选版', copy: '根任务承接原始意图，并连接三个可验收节点。', container: true },
+        contract: { title: '接口契约检查', copy: '冻结接口字段、失败响应和模拟数据，避免联调阶段反复变更。' },
+        recovery: { title: '失败恢复测试', copy: '验证失败重试、回滚阈值以及恢复后的证据留存。' },
+        release: { title: '灰度发布清单', copy: '确认执行负责人、灰度顺序和关键观察指标。' }
+      };
+      var defaultPositions = { root: [110, 285], contract: [455, 90], recovery: [455, 300], release: [455, 510] };
+      var edgeDefs = [['root', 'contract'], ['root', 'recovery'], ['root', 'release']];
+      var state = { stage: 0, playing: false, selected: '', selection: null, revision: 0, revisions: {}, completed: new Set() };
+      var view = { x: 0, y: 0, scale: 1 };
+      var timer = 0;
+      var token = 0;
+      var gesture = null;
+      var skipClick = false;
+      var workbench = document.getElementById('workbench');
+      var divider = document.getElementById('divider');
+      var messages = document.getElementById('messages');
+      var runButton = document.getElementById('run-button');
+      var stageLine = document.getElementById('stage-line');
+      var viewport = document.getElementById('viewport');
+      var world = document.getElementById('world');
+      var edgesSvg = document.getElementById('edges');
+      var nodes = Array.prototype.slice.call(document.querySelectorAll('.node'));
+      var nodeMap = new Map(nodes.map(function (node) { return [node.dataset.id, node]; }));
+      var defaultSummaries = {};
+      nodes.forEach(function (node) { defaultSummaries[node.dataset.id] = node.querySelector('.node-summary').textContent; });
+      var inspector = document.getElementById('inspector');
+      var completeButton = document.getElementById('complete-button');
+      var nodeEditor = document.getElementById('node-editor');
+      var selectionTools = document.getElementById('selection-tools');
+      var zoomLabel = document.getElementById('zoom-label');
+      var live = document.getElementById('live');
+      function number(value) { return Number.parseFloat(value || '0') || 0; }
+      function announce(message) { live.textContent = ''; requestAnimationFrame(function () { live.textContent = message; }); }
+      function position(node) { return { x: number(node.dataset.x), y: number(node.dataset.y) }; }
+      function placeNodes() { nodes.forEach(function (node) { node.style.left = node.dataset.x + 'px'; node.style.top = node.dataset.y + 'px'; }); }
+      function edgePath(from, to) {
+        var a = position(from);
+        var b = position(to);
+        var ax = a.x + from.offsetWidth;
+        var ay = a.y + from.offsetHeight / 2;
+        var bx = b.x;
+        var by = b.y + to.offsetHeight / 2;
+        var bend = Math.max(80, Math.abs(bx - ax) * .5);
+        return 'M' + ax + ' ' + ay + ' C' + (ax + bend) + ' ' + ay + ' ' + (bx - bend) + ' ' + by + ' ' + bx + ' ' + by;
+      }
+      function renderEdges() {
+        edgesSvg.textContent = '';
+        edgeDefs.forEach(function (def) {
+          var from = nodeMap.get(def[0]);
+          var to = nodeMap.get(def[1]);
+          if (!from.classList.contains('is-visible') || !to.classList.contains('is-visible')) return;
+          var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', edgePath(from, to));
+          path.setAttribute('class', 'edge' + (state.stage === 2 && !state.completed.has(def[1]) ? ' is-building' : '') + (state.completed.has(def[1]) ? ' is-done' : ''));
+          edgesSvg.appendChild(path);
+        });
+      }
+      function renderInspector() {
+        if (!state.selected) { inspector.classList.remove('is-open'); inspector.setAttribute('aria-hidden', 'true'); return; }
+        var info = nodeInfo[state.selected];
+        var done = state.completed.has(state.selected);
+        inspector.classList.add('is-open');
+        inspector.setAttribute('aria-hidden', 'false');
+        document.getElementById('inspect-title').textContent = info.title;
+        document.getElementById('inspect-copy').textContent = info.copy;
+        nodeEditor.value = nodeMap.get(state.selected).querySelector('.node-summary').textContent;
+        document.getElementById('inspect-state').textContent = done ? '已完成' : info.container ? '任务容器' : '待执行';
+        document.getElementById('inspect-revision').textContent = done ? '修订 #' + String(state.revisions[state.selected]).padStart(2, '0') : '未回写';
+        completeButton.disabled = info.container || done || state.stage < 3;
+        completeButton.textContent = info.container ? '容器节点无需回写' : done ? '已完成并回写' : state.stage < 3 ? '等待结构落图完成' : '标记完成并回写';
+      }
+      function renderSelection() {
+        var open = !!state.selection;
+        selectionTools.classList.toggle('is-open', open);
+        selectionTools.setAttribute('aria-hidden', open ? 'false' : 'true');
+        if (open) document.getElementById('selection-copy').textContent = '“' + state.selection.text + '”';
+      }
+      function render() {
+        document.getElementById('stage-value').textContent = state.stage + ' / 3';
+        Array.prototype.forEach.call(document.querySelectorAll('.message[data-stage]'), function (message) { message.classList.toggle('is-visible', number(message.dataset.stage) <= state.stage); });
+        nodes.forEach(function (node) {
+          var id = node.dataset.id;
+          var visible = number(node.dataset.stage) <= state.stage;
+          var done = state.completed.has(id);
+          node.classList.toggle('is-visible', visible);
+          node.classList.toggle('is-selected', state.selected === id);
+          node.classList.toggle('is-done', done);
+          var label = node.querySelector('[data-state-label]');
+          label.textContent = !visible ? '待创建' : done ? '已完成' : id === 'root' ? '结构已建立' : '待执行';
+        });
+        var lines = ['意图已收到，等待落图', '已建立根任务', '正在创建并连接节点', '结构已落图，等待节点回写'];
+        stageLine.textContent = lines[state.stage];
+        runButton.classList.toggle('is-running', state.playing);
+        runButton.textContent = state.playing ? '暂停落图' : state.stage === 3 ? '重新播放落图' : state.stage > 0 ? '继续落图' : '开始落图';
+        renderEdges();
+        renderInspector();
+        renderSelection();
+        messages.scrollTop = messages.scrollHeight;
+      }
+      function fitView() {
+        var visible = nodes.filter(function (node) { return node.classList.contains('is-visible'); });
+        if (!visible.length) { setView(0, 0, 1); return; }
+        var minX = Math.min.apply(null, visible.map(function (node) { return number(node.dataset.x); })) - 70;
+        var minY = Math.min.apply(null, visible.map(function (node) { return number(node.dataset.y); })) - 60;
+        var maxX = Math.max.apply(null, visible.map(function (node) { return number(node.dataset.x) + node.offsetWidth; })) + 70;
+        var maxY = Math.max.apply(null, visible.map(function (node) { return number(node.dataset.y) + node.offsetHeight; })) + 60;
+        var rect = viewport.getBoundingClientRect();
+        var scale = Math.min(1.05, Math.max(.45, Math.min(rect.width / (maxX - minX), rect.height / (maxY - minY))));
+        setView((rect.width - (maxX - minX) * scale) / 2 - minX * scale, (rect.height - (maxY - minY) * scale) / 2 - minY * scale, scale);
+      }
+      function applyView() {
+        world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.scale + ')';
+        zoomLabel.textContent = Math.round(view.scale * 100) + '%';
+        var major = 80 * view.scale;
+        var minor = 16 * view.scale;
+        viewport.style.backgroundPosition = view.x + 'px ' + view.y + 'px';
+        viewport.style.backgroundSize = major + 'px ' + major + 'px, ' + major + 'px ' + major + 'px, ' + minor + 'px ' + minor + 'px, ' + minor + 'px ' + minor + 'px';
+      }
+      function setView(x, y, scale) { view.x = x; view.y = y; view.scale = Math.max(.45, Math.min(1.6, scale)); applyView(); }
+      function zoomAt(clientX, clientY, factor) {
+        var rect = viewport.getBoundingClientRect();
+        var px = clientX - rect.left;
+        var py = clientY - rect.top;
+        var worldX = (px - view.x) / view.scale;
+        var worldY = (py - view.y) / view.scale;
+        var next = Math.max(.45, Math.min(1.6, view.scale * factor));
+        setView(px - worldX * next, py - worldY * next, next);
+      }
+      function schedule(id) {
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+          if (!state.playing || id !== token) return;
+          if (state.stage < 3) {
+            state.stage += 1;
+            if (state.stage === 3) {
+              state.playing = false;
+              render();
+              fitView();
+              announce('对话已自动落成四个节点。');
+              return;
+            }
+            render();
+            fitView();
+            schedule(id);
+          } else {
+            state.playing = false;
+            render();
+            announce('对话已自动落成四个节点。');
+          }
+        }, 900);
+      }
+      function toggleRun() {
+        if (state.playing) { state.playing = false; token += 1; clearTimeout(timer); render(); announce('落图已暂停。'); return; }
+        if (state.stage === 3) reset(false);
+        state.playing = true;
+        token += 1;
+        render();
+        announce('开始从对话自动落图。');
+        schedule(token);
+      }
+      function reset(shouldAnnounce) {
+        token += 1;
+        clearTimeout(timer);
+        state = { stage: 0, playing: false, selected: '', selection: null, revision: 0, revisions: {}, completed: new Set() };
+        nodes.forEach(function (node) { var pos = defaultPositions[node.dataset.id]; node.dataset.x = pos[0]; node.dataset.y = pos[1]; });
+        nodes.forEach(function (node) { node.querySelector('.node-summary').textContent = defaultSummaries[node.dataset.id]; });
+        document.getElementById('confirm-message').classList.remove('is-visible');
+        document.getElementById('feedback-message').classList.remove('is-visible');
+        placeNodes();
+        render();
+        fitView();
+        if (shouldAnnounce !== false) announce('对话、节点和回写状态已重置。');
+      }
+      function selectNode(node) { if (!node.classList.contains('is-visible')) return; state.selected = node.dataset.id; render(); }
+      function completeSelected() {
+        if (!state.selected || nodeInfo[state.selected].container || state.completed.has(state.selected) || state.stage < 3) return;
+        state.completed.add(state.selected);
+        state.revision += 1;
+        state.revisions[state.selected] = state.revision;
+        var info = nodeInfo[state.selected];
+        var confirm = document.getElementById('confirm-message');
+        document.getElementById('confirm-copy').textContent = '“' + info.title + '”已标记完成，画布状态已同步回当前对话。';
+        document.getElementById('confirm-trace').textContent = '回写：修订 #' + String(state.revision).padStart(2, '0');
+        confirm.classList.add('is-visible');
+        render();
+        announce(info.title + '已完成并回写 Agent。');
+      }
+      function captureSelection(node) {
+        var summary = node.querySelector('.node-summary');
+        var selection = getSelection();
+        var text = selection ? selection.toString().trim() : '';
+        if (!text || !selection.anchorNode || !summary.contains(selection.anchorNode)) return;
+        state.selection = { nodeId: node.dataset.id, text: text.slice(0, 80) };
+        renderSelection();
+      }
+      function showFeedback(copy, trace) {
+        document.getElementById('feedback-copy').textContent = copy;
+        document.getElementById('feedback-trace').textContent = trace;
+        document.getElementById('feedback-message').classList.add('is-visible');
+        messages.scrollTop = messages.scrollHeight;
+      }
+      placeNodes();
+      nodes.forEach(function (node) {
+        node.querySelector('.node-head').addEventListener('pointerdown', function (event) {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          var pos = position(node);
+          gesture = { type: 'node', node: node, x: event.clientX, y: event.clientY, startX: pos.x, startY: pos.y, moved: false };
+        });
+        node.addEventListener('click', function () { if (!skipClick) selectNode(node); });
+        node.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectNode(node); } });
+        node.querySelector('.node-summary').addEventListener('mouseup', function () { captureSelection(node); });
+        node.querySelector('.node-summary').addEventListener('keyup', function () { captureSelection(node); });
+      });
+      viewport.addEventListener('pointerdown', function (event) {
+        if (event.button !== 0 || event.target.closest('.node')) return;
+        gesture = { type: 'pan', x: event.clientX, y: event.clientY, startX: view.x, startY: view.y };
+        viewport.classList.add('is-panning');
+      });
+      addEventListener('pointermove', function (event) {
+        if (!gesture) return;
+        if (gesture.type === 'pan') setView(gesture.startX + event.clientX - gesture.x, gesture.startY + event.clientY - gesture.y, view.scale);
+        if (gesture.type === 'node') {
+          var dx = (event.clientX - gesture.x) / view.scale;
+          var dy = (event.clientY - gesture.y) / view.scale;
+          if (Math.abs(dx) + Math.abs(dy) > 3) gesture.moved = true;
+          gesture.node.dataset.x = Math.round(gesture.startX + dx);
+          gesture.node.dataset.y = Math.round(gesture.startY + dy);
+          placeNodes();
+          renderEdges();
+        }
+        if (gesture.type === 'divider') {
+          var rect = workbench.getBoundingClientRect();
+          var width = Math.max(230, Math.min(rect.width * .48, event.clientX - rect.left));
+          workbench.style.setProperty('--agent-width', width + 'px');
+          fitView();
+        }
+      });
+      addEventListener('pointerup', function () {
+        if (gesture && gesture.type === 'node' && gesture.moved) { skipClick = true; setTimeout(function () { skipClick = false; }, 0); }
+        gesture = null;
+        viewport.classList.remove('is-panning');
+        divider.classList.remove('is-dragging');
+      });
+      addEventListener('pointercancel', function () { gesture = null; viewport.classList.remove('is-panning'); divider.classList.remove('is-dragging'); });
+      divider.addEventListener('pointerdown', function (event) {
+        if (matchMedia('(max-width: 760px)').matches) return;
+        event.preventDefault();
+        gesture = { type: 'divider' };
+        divider.classList.add('is-dragging');
+      });
+      divider.addEventListener('keydown', function (event) {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        var rect = workbench.getBoundingClientRect();
+        var current = document.querySelector('.agent').getBoundingClientRect().width;
+        var width = Math.max(230, Math.min(rect.width * .48, current + (event.key === 'ArrowRight' ? 20 : -20)));
+        workbench.style.setProperty('--agent-width', width + 'px');
+        fitView();
+      });
+      viewport.addEventListener('wheel', function (event) { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.1 : .9); }, { passive: false });
+      document.getElementById('zoom-in').addEventListener('click', function () { var rect = viewport.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.12); });
+      document.getElementById('zoom-out').addEventListener('click', function () { var rect = viewport.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, .88); });
+      document.getElementById('fit-view').addEventListener('click', fitView);
+      document.getElementById('inspect-close').addEventListener('click', function () { state.selected = ''; render(); });
+      document.getElementById('save-copy').addEventListener('click', function () {
+        if (!state.selected) return;
+        var value = nodeEditor.value.trim();
+        if (!value) { announce('节点文字不能为空。'); return; }
+        nodeMap.get(state.selected).querySelector('.node-summary').textContent = value;
+        showFeedback('“' + nodeInfo[state.selected].title + '”节点文字已更新，并同步回当前对话。', '编辑回写：节点文案');
+        render();
+        announce('节点文字已更新。');
+      });
+      document.getElementById('selection-ask').addEventListener('click', function () {
+        if (!state.selection) return;
+        var current = state.selection;
+        showFeedback('关于“' + current.text + '”：建议把它拆成一个可验收结果，再补充负责人和完成条件。', '来源：' + nodeInfo[current.nodeId].title + ' / 文字选择');
+        state.selection = null;
+        renderSelection();
+        announce('Agent 已回应节点文字追问。');
+      });
+      document.getElementById('selection-edit').addEventListener('click', function () {
+        if (!state.selection) return;
+        state.selected = state.selection.nodeId;
+        state.selection = null;
+        render();
+        nodeEditor.focus();
+        nodeEditor.select();
+      });
+      completeButton.addEventListener('click', completeSelected);
+      runButton.addEventListener('click', toggleRun);
+      document.getElementById('reset-button').addEventListener('click', function () { reset(true); });
+      addEventListener('resize', fitView);
+      render();
+      requestAnimationFrame(fitView);
+    }());
+  </script>
 </body>
 </html>
