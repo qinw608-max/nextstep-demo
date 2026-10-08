@@ -1,0 +1,10 @@
+# Local environment values; keep an explicit example if one is added.
+.env
+.env.*
+!.env.example
+
+# OS metadata and Python maintenance caches.
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
